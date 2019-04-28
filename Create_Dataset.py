@@ -1,146 +1,305 @@
+import os
+import sys
+import random
+print(sys.version)
+
 import numpy as np
 import nibabel as nib
+import SimpleITK as sitk
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from glob import glob
-import random
+from torch.utils.data import Dataset, DataLoader
 
+path = '../../Task07_Pancreas/Task07_Pancreas/'
+trainpath = path + 'imagesTr/'
+testpath = path + 'imagesTs/'
+labelpath = path + 'labelsTr/'
 
-IMG_PATH = "Task07_Pancreas/imagesTr/"
-LBL_PATH = "Task07_Pancreas/labelsTr/"
+'''
+An images shape is always (x,y,z):
+	x = height of the image (direction left arm to right arm)
+	y = width of the image (direction back to belly)
+	z = depth of the image (direction feet to head)
 
+	If this is confusing: you can imagine the x from the patients point of view being their width
+'''
 
-class DataSet:
+class Pancreas(Dataset):
+	# todo cache patches
+	# up/downsample images voxeldistance
+	# normalize
+	def __init__(self,train):
+		self.train = train
+		if self.train: 
+			self.imgs = self.load_dir(trainpath)
+			self.lbls = self.load_dir(labelpath)
+		else:
+			self.imgs = self.load_dir(testpath)
+			
+		assert len(self.imgs) > 0,f'\n\nMake sure your image path is correct. the train path is currently set to {trainpath} but could not find any training images there.'
+		
+	def load_dir(self,path):
+		'''
+		We do not load the *actual* data yet, that is done with .get_data() in __getitem__
+		'''
+		return [nib.load(path+file) for file in os.listdir(path) if file[:8] == 'pancreas' and file[-7:] == '.nii.gz']
+		
+		
+	def imshow(self,index,z):
+		'''show image of the given index at the given z value'''
+		
+		img,lbl = self[index]
+		
+		plt.subplot(211)
+		plt.title("Image")
+		plt.imshow(img[:,:,z]) #[x,y,z]
+		
+		plt.subplot(212)
+		plt.title("Label")
+		plt.imshow(lbl[:, :,z])
 
-    def __init__(self, imgs, lbls=None):
-        self.imgs = imgs
-        self.lbls = lbls
+		
+		
+	def __getitem__(self,i):
+		sample = self.imgs[i].get_data()
+		#sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+		
+		label = self.lbls[i].get_data() if self.train else None
+		#label = sitk.resample_sitk_image( label, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+	
+		return sample,label
+	
+	def __len__(self):
+			return len(self.imgs)
+				
+class DataSet_: 
+	'''deprecated'''
 
-    def get_length(self):
-        return len(self.imgs)
+	def __init__(self, imgs, lbls=None):
+		self.imgs = imgs
+		self.lbls = lbls
 
-    def show_image(self, i, j):
-        plt.imshow(self.imgs[i, j])
-        plt.title('RGB image')
-        plt.show()
+	def get_length(self):
+		return len(self.imgs)
 
-
+	def show_image(self, i, j):
+		plt.imshow(self.imgs[i, j])
+		plt.title('RGB image')
+		plt.show()
+				
 class BatchCreator:
 
-    def __init__(self, patch_extractor, dataset, target_size):
-        self.patch_extractor = patch_extractor
-        self.target_size = target_size  # size of the output, can be useful when valid convolutions are used
+	def __init__(self, patch_extractor, dataset, target_size):
+		self.patch_extractor = patch_extractor
+		self.target_size = target_size  # size of the output, can be useful when valid convolutions are used
 
-        self.imgs = dataset.imgs
-        self.lbls = dataset.lbls
+		self.dataset = dataset
+		self.n = len(dataset)
+		self.patch_size = self.patch_extractor.patch_size
+		
+		
 
-        self.n = len(self.imgs)
-        self.patch_size = self.patch_extractor.patch_size
+	def create_image_batch(self, batch_size):
+		'''
+		returns a np.array of Patch objects of length batch_size
+		'''
 
-    def create_image_batch(self, batch_size):
-        '''
-        returns a single augmented image (x) with corresponding labels (y)
-        '''
-
-        x_data = np.zeros((batch_size, *self.patch_extractor.patch_size))
-        y_data = np.zeros((batch_size, *self.target_size))
-
-        for i in range(0, batch_size):
-            random_index = np.random.choice(len(self.imgs))  # pick random image
-            img, lbl = self.imgs[random_index], self.lbls[random_index]  # get image and segmentation map
-            patch_img, patch_lbl = self.patch_extractor.get_patch(img,
-                                                                  lbl)  # when image size is equal to patch size, this line is useless...
-
-            # crop labels based on target_size
-            h, w, _ = patch_lbl.shape
-            x_data[i, :, :, :] = patch_img
-            y_data[i, :, :, :] = patch_lbl
-            # ph = (self.patch_extractor.patch_size[0] - self.target_size[0]) // 2
-            # pw = (self.patch_extractor.patch_size[1] - self.target_size[1]) // 2
-            # x_data[i, :, :, :] = patch_img
-            # y_data[i, :, :, 0] = 1 - patch_lbl[ph:ph + self.target_size[0], pw:pw + self.target_size[1]].squeeze()
-            # y_data[i, :, :, 1] = patch_lbl[ph:ph + self.target_size[0], pw:pw + self.target_size[1]].squeeze()
-
-        return (x_data.astype(np.float32), y_data.astype(np.float32))
-
-    def get_image_generator(self, batch_size):
-        '''returns a generator that will yield image-batches infinitely'''
-        while True:
-            yield self.create_image_batch(batch_size)
+		patches = np.zeros(batch_size,dtype=object)
+		
+		for i in range(0, batch_size):
+			random_index = np.random.choice(len(self.dataset))   			# pick random image
+			img, lbl = self.dataset[random_index]    						# get image and segmentation map
+			patch_img, patch_lbl = self.patch_extractor.get_patch(img,lbl)  # when image size is equal to patch size, this line is useless...
+			origin = self.patch_extractor.origin
+			patch_size = Coord(self.patch_extractor.patch_size)
+			patches[i] = Patch(patch_img,patch_lbl,random_index,origin,patch_size,self.dataset)
+			
+		return patches
+		
+	def get_image_generator(self, batch_size):
+		'''
+		Returns a generator that will yield image-batches infinitely in the form of a np.array of Patches objects)
+		'''
+		while True:
+			yield self.create_image_batch(batch_size)
 
 
 class PatchExtractor:
 
-    def __init__(self, patch_size):
-        self.patch_size = patch_size
+	def __init__(self, patch_size):
+		self.patch_size = patch_size #Coord object
+		self.origin = Coord((0,0,0))
+		#self.x = 0   #deprecated
+		#self.y = 0   #deprecated
+		#self.z = 0   #deprecated
+		
+	def get_patch(self, image, label):
+		'''
+		Get a patch of patch_size from input image, along with corresponding label map.
+		at least 30% of the time, this image will contain the pancrea
+		This function works with image size >= patch_size, and pick random location of the patch inside the image.
 
-    def get_patch(self, image, label):
-        '''
-        Get a patch of patch_size from input image, along with corresponding label map.
-        This function works with image size >= patch_size, and pick random location of the patch inside the image.
-        (Possibly) return a flipped version of the image and corresponding label.
+		image: a numpy array representing the input image
+		label: a numpy array representing the labels corresponding to input image
+		'''
+		
+		if (True or random.random() < 0.30):
+			#select pancreas within bounding box
+			pan = np.where(label==1) # return all indices of pancreas voxels
+			index = random.choice(range(len(pan[0]))) # choose a random pancrea voxel index
+			
+			center = Coord((pan[0][index],pan[1][index],pan[2][index]))
+			correction = self.patch_size//2
+			self.origin = center - correction
+		else:   
+			# pick a random location
+			dims = Coord(image.shape)
+			x = random.randint(0, dims[0] - self.patch_size[0])
+			y = random.randint(0, dims[1] - self.patch_size[1])
+			z = random.randint(0, dims[2] - self.patch_size[2])
+			self.origin = Coord((x,y,z))
+			
+		self.origin.lower_bound(0) #make sure the origin is not outside (negative) of the image
+		
+		patch = image[  self.origin.x:self.origin.x + self.patch_size[0],
+						self.origin.y:self.origin.y + self.patch_size[1],
+						self.origin.z:self.origin.z + self.patch_size[2]]
+		
+		target = label[	self.origin.x:self.origin.x + self.patch_size[0],
+						self.origin.y:self.origin.y + self.patch_size[1],
+						self.origin.z:self.origin.z + self.patch_size[2]]
+						
+		target.reshape(self.patch_size[0], self.patch_size[1], self.patch_size[2])
 
-        image: a numpy array representing the input image
-        label: a numpy array representing the labels corresponding to input image
-        '''
+		patch_out = patch  # / 255.  # normalize image intensity to range [0., 1.] # Or should we normalize the entire image
+		target_out = target
 
-        # pick a random location
-        dims = image.shape
-        h = random.randint(0, dims[0] - self.patch_size[0])
-        l = random.randint(0, dims[1] - self.patch_size[1])
-        w = random.randint(0, dims[2] - self.patch_size[2])
+		return patch_out, target_out
 
-        patch = image[h:h + self.patch_size[0], l:l + self.patch_size[1], w:w + self.patch_size[2]]
-        target = label[h:h + self.patch_size[0], l:l + self.patch_size[1], w:w + self.patch_size[2]].reshape\
-            (self.patch_size[0], self.patch_size[1], self.patch_size[2])
+class Patch():
+	def __init__(self,pimg,plbl,idx,origin,patch_size,dataset):
+		self.pimg        = pimg  # patch image
+		self.plbl        = plbl  # patch label
+		self.idx         = idx   # the index of the image in the dataset
+		self.origin      = origin#the coordinates of the full image where the origin of the patch is
+		self.patch_size  = patch_size
+		self.dataset     = dataset
+		
+	
+	def imshow(self):
+		'''
+		plots the patch and it's original image and labels (including an indicative red bounding box) (WIP)
+		'''
+		img,lbl = self.dataset[self.idx]
+		print('img::',type(img),img.shape)
+		
+		fig,ax = plt.subplots(2,2)
+		
+		ax[0,0].set_title("Image",fontsize=10)
+		ax[0,0].imshow(img[:,:,self.origin.z]) #[x,y,z]
+		#ax[0,0].add_patch(patches.Rectangle((self.origin.x,self.origin.y),self.patch_size.x,self.patch_size.y,linewidth=1,edgecolor='r',facecolor='none'))
+		
+		ax[0,1].set_title("Label",fontsize=10)
+		ax[0,1].imshow(lbl[:, :,self.origin.z])
+		#ax[0,1].add_patch(patches.Rectangle((self.origin.x,self.origin.y),self.patch_size.x,self.patch_size.y,linewidth=1,edgecolor='r',facecolor='none'))
+		
+		ax[1,0].set_title("Patch Image",fontsize=10)
+		ax[1,0].imshow(self.pimg[:, :, 0])
 
-        patch_out = patch  # / 255.  # normalize image intensity to range [0., 1.]
-        target_out = target
+		ax[1,1].set_title("Patch Label")
+		ax[1,1].imshow(self.plbl[:, :, 0])
 
-        return patch_out, target_out
+		
+		plt.show()
+	
+	def __str__(self):
+		return f'''[Patch object]
+	Index: {self.idx} 
+	Origin : {self.origin} 
+	Patch Size : {self.patch_size}
+'''
+		
+class Coord():
+	'''
+	You can treat this as a regular tuple,
+	you can use the + += - -= // operators on this coord as is intuitive
+	
+	
+	'''
+	def __init__(self,coord):
+		if (not isinstance(coord,tuple) and not isinstance(coord,Coord)):
+			coord = (coord,coord,coord) # expand the value so Coord(2) will produce the same as Coord((2,2,2)) this is nice because now we can easily do Coord((x,y,z))/2 instead of Coord((x,y,z))/Coord((2,2,2)) 
+			
+		self.x = coord[0]
+		self.y = coord[1]
+		self.z = coord[2]
+		
+	def get(self):
+		return self.x, self.y, self.z 
+	
+	def lower_bound(self,bound):
+		self.x = max(bound,self.x)
+		self.y = max(bound,self.y)
+		self.z = max(bound,self.z)
+	
+	def __add__(self,other):
+		other = Coord(other)
+		return Coord((self.x+other.x, self.y+other.y, self.z+other.z))
+		
+	def __sub__(self,other):
+		other = Coord(other)
+		return Coord((self.x-other.x, self.y-other.y, self.z-other.z))
+		
+	def __floordiv__(self,other):
+		other = Coord(other)
+		return Coord((self.x//other.x, self.y//other.y, self.z//other.z))
+
+	def __iadd__(self,other):
+		other = Coord(other)
+		self.x += other.x
+		self.y += other.y
+		self.z += other.z
+		
+	def __isub__(self,other):
+		other = Coord(other)
+		self.x -= other.x
+		self.y -= other.y
+		self.z -= other.z
+
+	def __getitem__(self,i):
+		#So you can treat Coord as a regular tuple as well
+		return [self.x, self.y, self.z][i]
+		
+	def __str__(self):
+		return f'({self.x}, {self.y}, {self.z})'
+		
+	
+	
+			
+#Create the dataset and Load the data (headers)
+pancreas = Pancreas(train=True)
 
 
-# # First images
-files = "pancreas_*.nii.gz"
-num_of_imgs = 1
-img_files = glob(IMG_PATH + files)[:num_of_imgs]
-imgs = [nib.load(file) for file in img_files]
-imgs = [img.get_fdata() for img in imgs]
-
-lbl_files = glob(LBL_PATH + files)[:num_of_imgs]
-lbls = [nib.load(file) for file in lbl_files]
-lbls = [lbl.get_fdata() for lbl in lbls]
-
-train_data = DataSet(np.array(imgs), np.array(lbls))
-
-patch_length = 128
-patch_size = (patch_length, patch_length, 3)
+#Create a batch generator given a BatchCreator and PatchExtractor object
+patch_size = Coord((256, 256, 30))
+batch_size = 3
 patchExtractor = PatchExtractor(patch_size)
-target_size = (patch_length, patch_length, 3)
-batch_size = 10
+batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
+batchGenerator = batchCreator.get_image_generator(batch_size)
 
-batchCreator = BatchCreator(patchExtractor, train_data, target_size)
+#Get one batch from the generator
+batch = next(batchGenerator)
 
-gen = batchCreator.get_image_generator(batch_size)
+#Get the first patch from the batch
+patch = batch[0]
 
-example = gen.__next__()
-print(example[0].shape)
+#print the meta data of the patch
+print(patch)
 
-plt.subplot(221)
-plt.title("Image")
-plt.imshow(imgs[0][:, :, 20])
+#Plot the patch (inlcuding the original image)
+patch.imshow()
 
-plt.subplot(222)
-plt.title("Label")
-plt.imshow(lbls[0][:, :, 20])
-
-plt.subplot(223)
-plt.title("Patch Image")
-plt.imshow(example[0][0, :, :, 0])
-
-plt.subplot(224)
-plt.title("Patch Label")
-plt.imshow(example[1][0, :, :, 0])
-plt.show()
 
 
 
