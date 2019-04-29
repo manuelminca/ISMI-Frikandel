@@ -1,6 +1,7 @@
 import os
 import sys
 import random
+import time
 print(sys.version)
 
 import numpy as np
@@ -26,9 +27,13 @@ An images shape is always (x,y,z):
 '''
 
 class Pancreas(Dataset):
-	# todo cache patches
-	# up/downsample images voxeldistance
-	# normalize
+	'''
+	todo:
+		cache patches # Do we actually need to chache them, cant we keep them in memory for one batch and throw them away...? (as long as we don't need to reconstruct the image) We don't keep the full images in memory
+	 	
+		up/downsample images voxeldistance, the voxel spacing should be [2.5, 0.8, 0.8] # This page should help to do it in nibabel https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
+
+	'''
 	def __init__(self,train):
 		self.train = train
 		if self.train: 
@@ -46,47 +51,30 @@ class Pancreas(Dataset):
 		return [nib.load(path+file) for file in os.listdir(path) if file[:8] == 'pancreas' and file[-7:] == '.nii.gz']
 		
 		
-	def imshow(self,index,z):
-		'''show image of the given index at the given z value'''
-		
-		img,lbl = self[index]
-		
-		plt.subplot(211)
-		plt.title("Image")
-		plt.imshow(img[:,:,z]) #[x,y,z]
-		
-		plt.subplot(212)
-		plt.title("Label")
-		plt.imshow(lbl[:, :,z])
-
-		
-		
 	def __getitem__(self,i):
-		sample = self.imgs[i].get_data()
-		#sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+		def normalize(img): # we don't change the std (should we?)
+			u,l = np.max(img),np.min(img)
+			img = (img - l)/(u-l)
+			return img
+			
+		#print(self.imgs[i].affine)#I think we have to change the affine to change the voxel spacing https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
+								  # or pixdim from the header...
+								  
+
+		sample = self.imgs[i].get_fdata(caching='unchanged') #using get_fdata() instead of get_data() makes it easier to predict the return data type . caching='fill' ensures we cache the image
 		
-		label = self.lbls[i].get_data() if self.train else None
+		#sitk doesn't work on nibabel images
+		#sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+		sample = normalize(sample)
+		
+		label = self.lbls[i].get_fdata(caching='unchanged') if self.train else None
 		#label = sitk.resample_sitk_image( label, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+	
 	
 		return sample,label
 	
 	def __len__(self):
 			return len(self.imgs)
-				
-class DataSet_: 
-	'''deprecated'''
-
-	def __init__(self, imgs, lbls=None):
-		self.imgs = imgs
-		self.lbls = lbls
-
-	def get_length(self):
-		return len(self.imgs)
-
-	def show_image(self, i, j):
-		plt.imshow(self.imgs[i, j])
-		plt.title('RGB image')
-		plt.show()
 				
 class BatchCreator:
 
@@ -134,7 +122,7 @@ class PatchExtractor:
 		#self.y = 0   #deprecated
 		#self.z = 0   #deprecated
 		
-	def get_patch(self, image, label):
+	def get_patch(self, image, label, always_pancreas = False):
 		'''
 		Get a patch of patch_size from input image, along with corresponding label map.
 		at least 30% of the time, this image will contain the pancrea
@@ -144,7 +132,7 @@ class PatchExtractor:
 		label: a numpy array representing the labels corresponding to input image
 		'''
 		
-		if (True or random.random() < 0.30):
+		if (always_pancreas or random.random() < 0.30):
 			#select pancreas within bounding box
 			pan = np.where(label==1) # return all indices of pancreas voxels
 			index = random.choice(range(len(pan[0]))) # choose a random pancrea voxel index
@@ -189,27 +177,31 @@ class Patch():
 	
 	def imshow(self):
 		'''
-		plots the patch and it's original image and labels (including an indicative red bounding box) (WIP)
+		plots the patch and it's original image and labels (including an indicative red bounding box)
 		'''
-		img,lbl = self.dataset[self.idx]
-		print('img::',type(img),img.shape)
+		halfpatch = self.patch_size//2
+		img,lbl = self.dataset[self.idx] # load the original image
 		
 		fig,ax = plt.subplots(2,2)
 		
+		#normal image
 		ax[0,0].set_title("Image",fontsize=10)
-		ax[0,0].imshow(img[:,:,self.origin.z]) #[x,y,z]
-		#ax[0,0].add_patch(patches.Rectangle((self.origin.x,self.origin.y),self.patch_size.x,self.patch_size.y,linewidth=1,edgecolor='r',facecolor='none'))
-		
+		ax[0,0].imshow(img[:,:,self.origin.z+halfpatch.z]) #[x,y,z]
+		ax[0,0].add_patch(patches.Rectangle((self.origin.y,self.origin.x),self.patch_size.x,self.patch_size.y,linewidth=1,edgecolor='r',facecolor='none'))
+
+		#normal label
 		ax[0,1].set_title("Label",fontsize=10)
-		ax[0,1].imshow(lbl[:, :,self.origin.z])
-		#ax[0,1].add_patch(patches.Rectangle((self.origin.x,self.origin.y),self.patch_size.x,self.patch_size.y,linewidth=1,edgecolor='r',facecolor='none'))
+		ax[0,1].imshow(lbl[:, :,self.origin.z+halfpatch.z])
+		ax[0,1].add_patch(patches.Rectangle((self.origin.y,self.origin.x),self.patch_size.x,self.patch_size.y,linewidth=1,edgecolor='r',facecolor='none'))
 		
+		#patch image
 		ax[1,0].set_title("Patch Image",fontsize=10)
-		ax[1,0].imshow(self.pimg[:, :, 0])
+		ax[1,0].imshow(self.pimg[:, :, halfpatch.z])
 
+		#patch label
 		ax[1,1].set_title("Patch Label")
-		ax[1,1].imshow(self.plbl[:, :, 0])
-
+		ax[1,1].imshow(self.plbl[:, :, halfpatch.z])
+	
 		
 		plt.show()
 	
@@ -222,10 +214,17 @@ class Patch():
 		
 class Coord():
 	'''
-	You can treat this as a regular tuple,
+	You can treat this as if it were a regular tuple,
 	you can use the + += - -= // operators on this coord as is intuitive
+	you can access the variables by Coord_obj.x or Coord_obj[0]
 	
-	
+	Remember:
+		An images shape is always (x,y,z):
+			x = *height* of the image (direction left arm to right arm)
+			y = *width* of the image (direction back to belly)
+			z = depth of the image (direction feet to head)
+		
+		If this is confusing: you can imagine the x from the patients point of view being their width
 	'''
 	def __init__(self,coord):
 		if (not isinstance(coord,tuple) and not isinstance(coord,Coord)):
@@ -275,7 +274,6 @@ class Coord():
 		return f'({self.x}, {self.y}, {self.z})'
 		
 	
-	
 			
 #Create the dataset and Load the data (headers)
 pancreas = Pancreas(train=True)
@@ -283,7 +281,7 @@ pancreas = Pancreas(train=True)
 
 #Create a batch generator given a BatchCreator and PatchExtractor object
 patch_size = Coord((256, 256, 30))
-batch_size = 3
+batch_size = 10
 patchExtractor = PatchExtractor(patch_size)
 batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
 batchGenerator = batchCreator.get_image_generator(batch_size)
@@ -298,9 +296,15 @@ patch = batch[0]
 print(patch)
 
 #Plot the patch (inlcuding the original image)
-patch.imshow()
+#patch.imshow()
 
+#Example of looping through a batch
+#for patch in next(batchGenerator):
+#	patch.imshow()
 
-
-
+#Benchmark speed
+#a = time.time()
+#for i in range(10):
+#	batch = next(batchGenerator)
+#print(f'10 batches of batch_size {batch_size} took {time.time()-a} ms')
 
