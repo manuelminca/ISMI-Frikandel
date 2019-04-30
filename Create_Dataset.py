@@ -35,7 +35,7 @@ class Pancreas(Dataset):
 	'''
 	todo:
 		cache patches # Do we actually need to chache them, cant we keep them in memory for one batch and throw them away...? (as long as we don't need to reconstruct the image) We don't keep the full images in memory
-	 	
+		
 		up/downsample images voxeldistance, the voxel spacing should be [2.5, 0.8, 0.8] # This page should help to do it in nibabel https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
 
 	'''
@@ -67,6 +67,7 @@ class Pancreas(Dataset):
 								  
 
 		sample = self.imgs[i].get_fdata(caching='unchanged') #using get_fdata() instead of get_data() makes it easier to predict the return data type . caching='unchanged' ensures we DONT cache the image, it would blow up our memory
+		print(type(sample),sample.dtype, sample)
 		
 		#sitk doesn't work on nibabel images
 		#sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
@@ -101,8 +102,8 @@ class BatchCreator:
 		patches = np.zeros(batch_size,dtype=object)
 		
 		for i in range(0, batch_size):
-			random_index = np.random.choice(len(self.dataset))   			# pick random image
-			img, lbl = self.dataset[random_index]    						# get image and segmentation map
+			random_index = np.random.choice(len(self.dataset))              # pick random image
+			img, lbl = self.dataset[random_index]                           # get image and segmentation map
 			patch_img, patch_lbl = self.patch_extractor.get_patch(img,lbl)  # when image size is equal to patch size, this line is useless...
 			origin = self.patch_extractor.origin
 			patch_size = Coord(self.patch_extractor.patch_size)
@@ -158,8 +159,8 @@ class PatchExtractor:
 		patch = image[  self.origin.x : self.origin.x + self.patch_size[0],
 						self.origin.y : self.origin.y + self.patch_size[1],
 						self.origin.z : self.origin.z + self.patch_size[2]]
-		                                
-		target = label[	self.origin.x : self.origin.x + self.patch_size[0],
+										
+		target = label[ self.origin.x : self.origin.x + self.patch_size[0],
 						self.origin.y : self.origin.y + self.patch_size[1],
 						self.origin.z : self.origin.z + self.patch_size[2]]
 						
@@ -282,7 +283,7 @@ class Coord():
 		return f'({self.x}, {self.y}, {self.z})'
 		
 	
-tracker = SummaryTracker()		
+tracker = SummaryTracker()      
 #Create the dataset and Load the data (headers)
 pancreas = Pancreas(train=True)
 
@@ -308,7 +309,7 @@ print(patch)
 
 #Example of looping through a batch
 #for patch in next(batchGenerator):
-#	patch.imshow()
+#   patch.imshow()
 
 #Benchmark speed
 #a = time.time()
