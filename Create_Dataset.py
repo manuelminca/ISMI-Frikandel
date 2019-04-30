@@ -12,6 +12,11 @@ import matplotlib.patches as patches
 from glob import glob
 from torch.utils.data import Dataset, DataLoader
 
+#memory debugger
+from pympler.tracker import SummaryTracker
+
+
+
 path = '../../Task07_Pancreas/Task07_Pancreas/'
 trainpath = path + 'imagesTr/'
 testpath = path + 'imagesTs/'
@@ -61,7 +66,7 @@ class Pancreas(Dataset):
 								  # or pixdim from the header...
 								  
 
-		sample = self.imgs[i].get_fdata(caching='unchanged') #using get_fdata() instead of get_data() makes it easier to predict the return data type . caching='fill' ensures we cache the image
+		sample = self.imgs[i].get_fdata(caching='unchanged') #using get_fdata() instead of get_data() makes it easier to predict the return data type . caching='unchanged' ensures we DONT cache the image, it would blow up our memory
 		
 		#sitk doesn't work on nibabel images
 		#sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
@@ -74,7 +79,7 @@ class Pancreas(Dataset):
 		return sample,label
 	
 	def __len__(self):
-			return len(self.imgs)
+		return len(self.imgs)
 				
 class BatchCreator:
 
@@ -150,13 +155,13 @@ class PatchExtractor:
 			
 		self.origin.lower_bound(0) #make sure the origin is not outside (negative) of the image
 		
-		patch = image[  self.origin.x:self.origin.x + self.patch_size[0],
-						self.origin.y:self.origin.y + self.patch_size[1],
-						self.origin.z:self.origin.z + self.patch_size[2]]
-		
-		target = label[	self.origin.x:self.origin.x + self.patch_size[0],
-						self.origin.y:self.origin.y + self.patch_size[1],
-						self.origin.z:self.origin.z + self.patch_size[2]]
+		patch = image[  self.origin.x : self.origin.x + self.patch_size[0],
+						self.origin.y : self.origin.y + self.patch_size[1],
+						self.origin.z : self.origin.z + self.patch_size[2]]
+		                                
+		target = label[	self.origin.x : self.origin.x + self.patch_size[0],
+						self.origin.y : self.origin.y + self.patch_size[1],
+						self.origin.z : self.origin.z + self.patch_size[2]]
 						
 		target.reshape(self.patch_size[0], self.patch_size[1], self.patch_size[2])
 
@@ -167,8 +172,11 @@ class PatchExtractor:
 
 class Patch():
 	def __init__(self,pimg,plbl,idx,origin,patch_size,dataset):
+		#main data
 		self.pimg        = pimg  # patch image
 		self.plbl        = plbl  # patch label
+		
+		#metadata
 		self.idx         = idx   # the index of the image in the dataset
 		self.origin      = origin#the coordinates of the full image where the origin of the patch is
 		self.patch_size  = patch_size
@@ -274,7 +282,7 @@ class Coord():
 		return f'({self.x}, {self.y}, {self.z})'
 		
 	
-			
+tracker = SummaryTracker()		
 #Create the dataset and Load the data (headers)
 pancreas = Pancreas(train=True)
 
@@ -288,7 +296,7 @@ batchGenerator = batchCreator.get_image_generator(batch_size)
 
 #Get one batch from the generator
 batch = next(batchGenerator)
-
+print(f'size {sys.getsizeof(batch)}')
 #Get the first patch from the batch
 patch = batch[0]
 
@@ -304,7 +312,12 @@ print(patch)
 
 #Benchmark speed
 #a = time.time()
-#for i in range(10):
-#	batch = next(batchGenerator)
+for i in range(10):
+	batch = next(batchGenerator)
+	
+	tracker.print_diff()
+	#input()
 #print(f'10 batches of batch_size {batch_size} took {time.time()-a} ms')
 
+tracker.print_diff()
+input()
