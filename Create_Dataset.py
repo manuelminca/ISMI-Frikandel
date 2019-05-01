@@ -305,13 +305,13 @@ batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
 batchGenerator = batchCreator.get_image_generator(batch_size)
 
 #Get one batch from the generator
-# batch = next(batchGenerator)
-# print(f'size {sys.getsizeof(batch)}')
-# #Get the first patch from the batch
-# patch = batch[0]
-#
-# #print the meta data of the patch
-# print(patch)
+batch = next(batchGenerator)
+print(f'size {sys.getsizeof(batch)}')
+#Get the first patch from the batch
+patch = batch[0]
+
+#print the meta data of the patch
+print(patch)
 
 #Plot the patch (inlcuding the original image)
 #patch.imshow()
@@ -331,23 +331,23 @@ batchGenerator = batchCreator.get_image_generator(batch_size)
 
 # tracker.print_diff()
 # input()
-
-filename = "patches_dataset.h5"
-
-#delete old file
-#os.remove(filename)
-
-count = 0
-
-os.remove(filename)
-
-with h5py.File(filename) as file:
-    for i in range(150):
-        for patch in next(batchGenerator):
-            count += 1
-            group = file.create_group(str(count))
-            img = group.create_dataset("img", data=np.float32(patch.pimg))
-            lbl = group.create_dataset("lbl", data=np.int8(patch.plbl))
-            idx = group.create_dataset("idx", data=np.int16(patch.idx))
-            origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
-            patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+#
+# filename = "patches_dataset.h5"
+#
+# #delete old file
+# #os.remove(filename)
+#
+# count = 0
+#
+# os.remove(filename)
+#
+# with h5py.File(filename) as file:
+#     for i in range(150):
+#         for patch in next(batchGenerator):
+#             count += 1
+#             group = file.create_group(str(count))
+#             img = group.create_dataset("img", data=np.float32(patch.pimg))
+#             lbl = group.create_dataset("lbl", data=np.int8(patch.plbl))
+#             idx = group.create_dataset("idx", data=np.int16(patch.idx))
+#             origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
+#             patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
