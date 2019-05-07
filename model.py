@@ -226,10 +226,11 @@ hf = h5py.File("patches_dataset.h5", 'r')
 #We obtain a list with all the IDs of the patches
 all_groups = list(hf)
 #Randomly shuffle the patches
-np.random.shuffle(all_groups)
+#np.random.shuffle(all_groups)
 #Dividing the dataset into train and test
 X_train, X_validation = train_test_split(all_groups, test_size=0.2)
 
+print(X_train)
 
 class Dataset(data.Dataset):
 	'Characterizes a dataset for PyTorch'
@@ -254,10 +255,12 @@ class Dataset(data.Dataset):
 # Parameters
 params = {'batch_size': 16,
           'shuffle': False,
-          'num_workers': 4}
+          'num_workers': 1}
 
 
 # Generators
+
+#https://www.kaggle.com/pinocookie/pytorch-dataset-and-dataloader
 training_set = Dataset("patches_dataset.h5", X_train)
 training_generator = data.DataLoader(training_set, **params)
 
@@ -265,8 +268,13 @@ validation_set = Dataset("patches_dataset.h5", X_validation)
 validation_generator = data.DataLoader(validation_set, **params)
 
 
-print(validation_set[1])
+#print(validation_set[1])
 
+train_iter = iter(training_set)
+
+images, labels = train_iter.next()
+
+print(images.shape)
 
 # for img, lbl in training_generator:
 # 	print(img.shape)
