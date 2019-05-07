@@ -332,7 +332,8 @@ print(patch)
 # tracker.print_diff()
 # input()
 #
-# filename = "patches_dataset.h5"
+#
+# filename = "patches_dataset_short.h5"
 #
 # #delete old file
 # #os.remove(filename)
@@ -342,7 +343,7 @@ print(patch)
 # os.remove(filename)
 #
 # with h5py.File(filename) as file:
-#     for i in range(150):
+#     for i in range(1):
 #         for patch in next(batchGenerator):
 #             count += 1
 #             group = file.create_group(str(count))

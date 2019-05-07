@@ -232,7 +232,7 @@ X_train, X_validation = train_test_split(all_groups, test_size=0.2)
 
 print(X_train)
 
-class Dataset(data.Dataset):
+class Dataset_loader(data.Dataset):
 	'Characterizes a dataset for PyTorch'
 	def __init__(self, path, indexes):
 		'Initialization'
@@ -261,12 +261,12 @@ params = {'batch_size': 16,
 # Generators
 
 #https://www.kaggle.com/pinocookie/pytorch-dataset-and-dataloader
-training_set = Dataset("patches_dataset.h5", X_train)
+training_set = Dataset_loader("patches_dataset.h5", X_train)
 training_generator = data.DataLoader(training_set, **params)
 
-validation_set = Dataset("patches_dataset.h5", X_validation)
+validation_set = Dataset_loader("patches_dataset.h5", X_validation)
 validation_generator = data.DataLoader(validation_set, **params)
-
+ 
 
 #print(validation_set[1])
 
