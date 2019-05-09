@@ -6,7 +6,7 @@ print(sys.version)
 
 import numpy as np
 import nibabel as nib
-import SimpleITK as sitk
+# import SimpleITK as sitk
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from glob import glob
@@ -32,6 +32,7 @@ An images shape is always (x,y,z):
     If this is confusing: you can imagine the x from the patients point of view being their width
 '''
 
+
 class Pancreas(Dataset):
     '''
     todo:
@@ -56,7 +57,6 @@ class Pancreas(Dataset):
         '''
         return [nib.load(path+file) for file in os.listdir(path) if file[:8] == 'pancreas' and file[-7:] == '.nii.gz']
 
-
     def __getitem__(self,i):
         def normalize(img): # we don't change the std (should we?)
             u,l = np.max(img),np.min(img)
@@ -76,11 +76,11 @@ class Pancreas(Dataset):
         label = self.lbls[i].get_fdata(caching='unchanged') if self.train else None
         #label = sitk.resample_sitk_image( label, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
 
-
         return sample,label
 
     def __len__(self):
         return len(self.imgs)
+
 
 class BatchCreator:
 
@@ -174,6 +174,7 @@ class PatchExtractor:
 
         return patch_out, target_out
 
+
 class Patch():
     def __init__(self,pimg,plbl,idx,origin,patch_size,dataset):
         #main data
@@ -181,24 +182,23 @@ class Patch():
         self.plbl        = plbl  # patch label
 
         #metadata
-        self.idx         = idx   # the index of the image in the dataset
-        self.origin      = origin#the coordinates of the full image where the origin of the patch is
+        self.idx         = idx     # the index of the image in the dataset
+        self.origin      = origin  # the coordinates of the full image where the origin of the patch is
         self.patch_size  = patch_size
         self.dataset     = dataset
-
 
     def imshow(self):
         '''
         plots the patch and it's original image and labels (including an indicative red bounding box)
         '''
         halfpatch = self.patch_size//2
-        img,lbl = self.dataset[self.idx] # load the original image
+        img,lbl = self.dataset[self.idx]  # load the original image
 
         fig,ax = plt.subplots(2,2)
 
         #normal image
         ax[0,0].set_title("Image",fontsize=10)
-        ax[0,0].imshow(img[:,:,self.origin.z+halfpatch.z]) #[x,y,z]
+        ax[0,0].imshow(img[:,:,self.origin.z+halfpatch.z])  #[x,y,z]
         ax[0,0].add_patch(patches.Rectangle((self.origin.y,self.origin.x),self.patch_size.x,self.patch_size.y,linewidth=1,edgecolor='r',facecolor='none'))
 
         #normal label
@@ -223,6 +223,7 @@ class Patch():
     Origin : {self.origin}
     Patch Size : {self.patch_size}
 '''
+
 
 class Coord():
     '''
@@ -292,6 +293,7 @@ class Coord():
     def __str__(self):
         return f'({self.x}, {self.y}, {self.z})'
 
+
 #tracker = SummaryTracker()
 #Create the dataset and Load the data (headers)
 pancreas = Pancreas(train=True)
@@ -333,22 +335,27 @@ print(patch)
 # input()
 #
 #
-# filename = "patches_dataset_short.h5"
-#
-# #delete old file
-# #os.remove(filename)
-#
-# count = 0
-#
-# os.remove(filename)
-#
-# with h5py.File(filename) as file:
-#     for i in range(1):
-#         for patch in next(batchGenerator):
-#             count += 1
-#             group = file.create_group(str(count))
-#             img = group.create_dataset("img", data=np.float32(patch.pimg))
-#             lbl = group.create_dataset("lbl", data=np.int8(patch.plbl))
-#             idx = group.create_dataset("idx", data=np.int16(patch.idx))
-#             origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
-#             patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+filename = "patches_dataset_short.h5"
+
+if os.path.isfile(filename):
+    os.remove(filename)
+
+count = 0
+
+
+with h5py.File(filename) as file:
+    for i in range(1):
+        for patch in next(batchGenerator):
+            group = file.create_group(str(count))
+            img = group.create_dataset("img", data=np.float32(patch.pimg))
+            lbl = group.create_dataset("lbl", data=np.uint8(patch.plbl))
+            idx = group.create_dataset("idx", data=np.int32(patch.idx))
+            origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
+            patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+            count += 1
+
+'''
+Some General Notes:
+ Added count increment afterwards such that the indeces start at 0
+ set datatypes of img and lbl to int32 since pytorch dataloader only supports: double, float, int64, int32, and uint8.
+'''
