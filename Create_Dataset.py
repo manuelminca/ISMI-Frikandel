@@ -348,7 +348,7 @@ with h5py.File(filename) as file:
         for patch in next(batchGenerator):
             group = file.create_group(str(count))
             img = group.create_dataset("img", data=np.float32(patch.pimg))
-            lbl = group.create_dataset("lbl", data=np.uint8(patch.plbl))
+            lbl = group.create_dataset("lbl", data=np.int64(patch.plbl))
             idx = group.create_dataset("idx", data=np.int32(patch.idx))
             origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
             patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))

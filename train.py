@@ -31,10 +31,7 @@ class PatchDataset(Dataset):
         label = self.file[str(index)]['lbl'][()]
 
         X = image.reshape((1, *image.shape))
-        # Encoding one-hot labels
-        y = (np.arange(label.max()) == label[..., None] - 1).astype(np.uint8)
-        y = torch.from_numpy(y)
-
+        y = label
 
         if self.transform:
             X = self.transform(X)
@@ -57,14 +54,6 @@ def train(model, train_loader):
             optimizer.zero_grad()
             # forward, backward and optimize
             pred = model(images)
-
-            print(pred.shape)
-            print(labels.shape)
-            pred = pred.reshape((2, -1))
-            labels = labels.reshape((2, -1))
-            labels = labels.long()
-            print(pred.shape)
-            print(labels.shape)
 
             loss = criterion(pred, labels)
             loss.backward()
@@ -96,19 +85,17 @@ def main():
     train_dataset = PatchDataset(patches_file, X_train, n_classes=3)
     train_loader = DataLoader(train_dataset, **params)
 
-    train_iter = iter(train_loader)
-
-    imgs, lbls = train_iter.next()
-
-    print(lbls.shape)
+    # train_iter = iter(train_loader)
+    # imgs, lbls = train_iter.next()
+    # print(lbls.shape)
 
     # Try to obtain summary of the 3D U-Net
     # model = Modified3DUNet(in_channels=1, n_classes=3)
     # summary(model, (1, 256, 256, 32))
 
-    # model = SimpleModel(out_classes=3)
+    model = SimpleModel(out_classes=3)
     # summary(model, (1, 64, 64, 16))
-    # train(model, train_loader)
+    train(model, train_loader)
 
 
 if __name__ == '__main__':
