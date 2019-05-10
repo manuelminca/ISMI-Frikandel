@@ -218,25 +218,11 @@ class Modified3DUNet(nn.Module):
         ds1_ds2_sum_upscale_ds3_sum_upscale = self.upsacle(ds1_ds2_sum_upscale_ds3_sum)
 
         out = out_pred + ds1_ds2_sum_upscale_ds3_sum_upscale
-        seg_layer = out
-        out = out.permute(0, 2, 3, 4, 1).contiguous().view(-1, self.n_classes)
-        # out = out.view(-1, self.n_classes)
-        out = self.softmax(out)
-        return out, seg_layer
-
-# def getBatch(self, dataset):
-
-
-#     while True:
-#
-#     keys = []
-#     with h5py.File(path, 'r') as f: # open file
-#         f.visit(keys.append) # append all keys to list
-#         for key in keys:
-#             if ':' in key: # contains data if ':' in key
-#                 print(f[key].name)
-#                 weights[f[key].name] = f[key].value
-#     return weights
+        # seg_layer = out
+        # out = out.permute(0, 2, 3, 4, 1).contiguous().view(-1, self.n_classes)
+        # # out = out.view(-1, self.n_classes)
+        # out = self.softmax(out)
+        return out  # , seg_layer
 
 
 class SimpleModel(nn.Module):

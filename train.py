@@ -85,15 +85,11 @@ def main():
     train_dataset = PatchDataset(patches_file, X_train, n_classes=3)
     train_loader = DataLoader(train_dataset, **params)
 
-    # train_iter = iter(train_loader)
-    # imgs, lbls = train_iter.next()
-    # print(lbls.shape)
-
     # Try to obtain summary of the 3D U-Net
-    # model = Modified3DUNet(in_channels=1, n_classes=3)
+    model = Modified3DUNet(in_channels=1, n_classes=3)
     # summary(model, (1, 256, 256, 32))
 
-    model = SimpleModel(out_classes=3)
+    # model = SimpleModel(out_classes=3)
     # summary(model, (1, 64, 64, 16))
     train(model, train_loader)
 
