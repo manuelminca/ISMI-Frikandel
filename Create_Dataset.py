@@ -300,7 +300,7 @@ pancreas = Pancreas(train=True)
 
 
 #Create a batch generator given a BatchCreator and PatchExtractor object
-patch_size = Coord((256, 256, 30))
+patch_size = Coord((64, 64, 16))
 batch_size = 10
 patchExtractor = PatchExtractor(patch_size)
 batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
@@ -335,7 +335,7 @@ print(patch)
 # input()
 #
 #
-filename = "patches_dataset_short.h5"
+filename = "patches_dataset_small.h5"
 
 if os.path.isfile(filename):
     os.remove(filename)

@@ -239,3 +239,58 @@ class Modified3DUNet(nn.Module):
 #     return weights
 
 
+class SimpleModel(nn.Module):
+    '''
+    Simple self made 3D U-net model for testing purposes. The conv layers have same in and
+    output shape (excluding channels). Similar to padding=same in tensorflow
+    '''
+
+    def __init__(self, out_classes):
+        super(SimpleModel, self).__init__()
+        self.conv3d_b1_1 = nn.Conv3d(1, 8, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3d_b1_2 = nn.Conv3d(8, 8, kernel_size=3, stride=1, padding=1, bias=False)
+        self.max_pool_1 = nn.MaxPool3d(2)
+
+        self.conv3d_b2_1 = nn.Conv3d(8, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3d_b2_2 = nn.Conv3d(16, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.max_pool_2 = nn.MaxPool3d(2)
+
+        self.conv3d_b3_1 = nn.Conv3d(16, 32, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3d_b3_2 = nn.Conv3d(32, 32, kernel_size=3, stride=1, padding=1, bias=False)
+        self.upsample_1 = nn.Upsample(scale_factor=2)
+
+        self.conv3d_b4_1 = nn.Conv3d(48, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3d_b4_2 = nn.Conv3d(16, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.upsample_2 = nn.Upsample(scale_factor=2)
+
+        self.conv3d_b5_1 = nn.Conv3d(24, 8, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3d_b5_2 = nn.Conv3d(8, 8, kernel_size=3, stride=1, padding=1, bias=False)
+
+        self.conv3d_end = nn.Conv3d(8, out_classes, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x):
+        x = self.conv3d_b1_1(x)
+        residual_1 = x
+        x = self.conv3d_b1_2(x)
+        x = self.max_pool_1(x)
+
+        x = self.conv3d_b2_1(x)
+        residual_2 = x
+        x = self.conv3d_b2_2(x)
+        x = self.max_pool_2(x)
+
+        x = self.conv3d_b3_1(x)
+        x = self.conv3d_b3_2(x)
+        x = self.upsample_1(x)
+
+        x = torch.cat([x, residual_2], dim=1)
+        x = self.conv3d_b4_1(x)
+        x = self.conv3d_b4_2(x)
+        x = self.upsample_2(x)
+
+        x = torch.cat([x, residual_1], dim=1)
+        x = self.conv3d_b5_1(x)
+        x = self.conv3d_b5_2(x)
+
+        out = self.conv3d_end(x)
+        return out
