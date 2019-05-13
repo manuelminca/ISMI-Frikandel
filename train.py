@@ -40,17 +40,37 @@ class PatchDataset(Dataset):
         return X, y
 
 
-def train(model, train_loader):
+# https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
+# Return accuracy
+def validation(model, val_loader, criterion):
+    correct, loss = 0, 0
+    total = 1
+    for i, data in enumerate(val_loader):
+        images, labels = data
+        if total == 1:
+            for s in labels.shape:
+                total *= s
+        ans = model(images)
+        _, predicted = torch.max(ans.data, 1)
+        correct += (predicted == labels).sum().item()
+        loss += criterion(ans, labels)
+    accuracy = 100. * correct / total
+    return accuracy, loss
+
+
+def train(model, train_loader, val_loader):
     epochs = 2
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters())
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     start_time = time.time()
-
+    validate = True
     for epoch in range(epochs):
         total_loss = 0.0
+        n_correct, n_total = 0, 0
         for i, data in enumerate(train_loader):
             images, labels = data
 
+            model.train()
             optimizer.zero_grad()
             # forward, backward and optimize
             pred = model(images)
@@ -62,13 +82,19 @@ def train(model, train_loader):
             total_loss += loss
             print("Epoch {:d} \t Batch {:d} \t total_loss = {:.3f}".format(epoch, i, total_loss))
 
+        if validate:
+            model.eval()
+            with torch.no_grad():
+                val_accuracy, val_loss = validation(model, val_loader, criterion)
+                print("Validation accuracy = {:.2f} \t Validation loss = {:.3f}".format(val_accuracy, val_loss))
+    total_val_loss = 0
+
     print("Done")
     print("--- Time: {:.3f} seconds ---".format(time.time() - start_time))
 
 
 # Creating a main is necessary in windows for multiprocessing, which is used by the dataloader
 def main():
-
     patches_file = "patches_dataset_small.h5"
     hf = h5py.File(patches_file, 'r')
     # We obtain a list with all the IDs of the patches
@@ -76,14 +102,15 @@ def main():
     # Dividing the dataset into train and validation
     X_train, X_validation = train_test_split(all_groups, test_size=0.2)
 
-
     # Parameters
     params = {'batch_size': 2,
               'shuffle': False,
               'num_workers': 1}
 
     train_dataset = PatchDataset(patches_file, X_train, n_classes=3)
+    val_dataset = PatchDataset(patches_file, X_validation, n_classes=3)
     train_loader = DataLoader(train_dataset, **params)
+    val_loader = DataLoader(val_dataset, **params)
 
     # Try to obtain summary of the 3D U-Net
     model = Modified3DUNet(in_channels=1, n_classes=3)
@@ -91,19 +118,11 @@ def main():
 
     # model = SimpleModel(out_classes=3)
     # summary(model, (1, 64, 64, 16))
-    train(model, train_loader)
+    train(model, train_loader, val_loader)
 
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
 
 ##############################################################################
 ## Manuel stuff
