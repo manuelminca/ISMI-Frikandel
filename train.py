@@ -73,11 +73,12 @@ def adapt_learn_rate(optimizer, epoch):
 def train(model, train_loader, val_loader):
     epochs = 10
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    optimizer = optim.Adam(model.parameters())
     start_time = time.time()
     validate = True
     total_loss = []
     for epoch in range(epochs):
+        adapt_learn_rate(optimizer, epoch)
         epoch_loss = []
         for i, data in enumerate(train_loader):
             patch_imgs, patch_lbls = data
@@ -108,7 +109,6 @@ def train(model, train_loader, val_loader):
                 val_accuracy, val_loss = validation(model, val_loader, criterion)
                 print("Validation accuracy = {:.2f} \t Validation loss = {:.3f}".format(val_accuracy, val_loss))
 
-        adapt_learn_rate(optimizer, epoch)
         total_loss.append(epoch_loss)
     total_val_loss = 0
 
@@ -119,6 +119,7 @@ def train(model, train_loader, val_loader):
 # Creating a main is necessary in windows for multiprocessing, which is used by the dataloader
 def main():
     patches_file = "patches_dataset_small.h5"
+    model_file = saved_network.pt
     hf = h5py.File(patches_file, 'r')
     # We obtain a list with all the IDs of the patches
     all_groups = list(hf)
@@ -144,3 +145,54 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+# https://pytorch.org/tutorials/beginner/saving_loading_models.html
+# Set checkpoint to false s
+def save_network(model, optimizer, epoch, loss, checkpoint=True):
+    if checkpoint:
+        path = 'network_checkpoint.tar'
+    else:
+        path = 'network_save.pt'
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss': loss
+    }, path)
+
+
+def load_checkpoint(path='network_checkpoint.tar'):
+    model = Modified3DUNet(in_channels=1, n_classes=3)
+    optimizer = optim.Adam(model.parameters())
+    checkpoint = torch.load(path)
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    loss = checkpoint['loss']
+    model.train()
+    return model, optimizer, epoch, loss
+
+
+# Load a pt network file on a GPU
+def load_saved_network_gpu(from_gpu,path='network_save.pt'):
+    device = torch.device("cuda")
+    model = Modified3DUNet(in_channels=1, n_classes=3)
+    optimizer = optim.Adam(model.parameters())
+
+    if from_gpu:
+        file = torch.load(path)
+    else:
+        file = torch.load(path, map_location="cuda:0")
+    model.load_state_dict(file['model_state_dict'])
+    optimizer.load_state_dict(file['optimizer_state_dict'])
+    epoch = file['epoch']
+    loss = file['loss']
+
+
+# Load a pt network file on a CPU
+def load_saved_network_cpu(from_gpu=True):
+    return True
+
+
