@@ -8,6 +8,7 @@ import time
 import torch
 from torchvision.transforms import ToTensor
 from model import Modified3DUNet, SimpleModel
+from model_loader import save_network, load_checkpoint
 from torchsummary import summary
 
 
@@ -70,14 +71,12 @@ def adapt_learn_rate(optimizer, epoch):
         param_group['lr'] = lr
 
 
-def train(model, train_loader, val_loader):
-    epochs = 10
+def train(model, optimizer, train_loader, val_loader, epoch_checkpoint, total_loss):
+    epochs = 4
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters())
     start_time = time.time()
-    validate = True
-    total_loss = []
-    for epoch in range(epochs):
+
+    for epoch in range(epoch_checkpoint, epoch_checkpoint + epochs):
         adapt_learn_rate(optimizer, epoch)
         epoch_loss = []
         for i, data in enumerate(train_loader):
@@ -100,17 +99,16 @@ def train(model, train_loader, val_loader):
             accuracy = 100. * correct / total_voxs
             print("Epoch {:d} \t Batch {:d} \t Loss = {:.3f} \t Accuracy = {:.3f}".format(epoch, i, loss, accuracy))
 
-
             loss += criterion(ans, patch_lbls)
 
-        if validate:
-            model.eval()
-            with torch.no_grad():
-                val_accuracy, val_loss = validation(model, val_loader, criterion)
-                print("Validation accuracy = {:.2f} \t Validation loss = {:.3f}".format(val_accuracy, val_loss))
+        model.eval()
+        with torch.no_grad():
+            val_accuracy, val_loss = validation(model, val_loader, criterion)
+            print("Validation accuracy = {:.2f} \t Validation loss = {:.3f}".format(val_accuracy, val_loss))
 
         total_loss.append(epoch_loss)
-    total_val_loss = 0
+    filename = 'Test_checkpoint_epoch_' + str(epoch_checkpoint+epochs)
+    save_network(model, optimizer, epoch_checkpoint+epochs, total_loss, True, filename)
 
     print("Done")
     print("--- Time: {:.3f} seconds ---".format(time.time() - start_time))
@@ -119,12 +117,13 @@ def train(model, train_loader, val_loader):
 # Creating a main is necessary in windows for multiprocessing, which is used by the dataloader
 def main():
     patches_file = "patches_dataset_small.h5"
-    model_file = saved_network.pt
     hf = h5py.File(patches_file, 'r')
     # We obtain a list with all the IDs of the patches
     all_groups = list(hf)
     # Dividing the dataset into train and validation
     X_train, X_validation = train_test_split(all_groups, test_size=0.2)
+
+
 
     # Parameters
     params = {'batch_size': 1,
@@ -136,63 +135,19 @@ def main():
     train_loader = DataLoader(train_dataset, **params)
     val_loader = DataLoader(val_dataset, **params)
 
-    # Try to obtain summary of the 3D U-Net
-    model = Modified3DUNet(in_channels=1, n_classes=3)
+    load_file = True
+    if load_file:
+        model, optimizer, epoch, loss = load_checkpoint('network_checkpoint')
+    else:
+        # Try to obtain summary of the 3D U-Net
+        model = Modified3DUNet(in_channels=1, n_classes=3)
+        optimizer = optim.Adam(model.parameters())
+        epoch = 0
+        loss = []
     # summary(model, (1, 256, 256, 32))
 
-    train(model, train_loader, val_loader)
+    train(model, optimizer, train_loader, val_loader, epoch, loss)
 
 
 if __name__ == '__main__':
     main()
-
-
-# https://pytorch.org/tutorials/beginner/saving_loading_models.html
-# Set checkpoint to false s
-def save_network(model, optimizer, epoch, loss, checkpoint=True):
-    if checkpoint:
-        path = 'network_checkpoint.tar'
-    else:
-        path = 'network_save.pt'
-    torch.save({
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'loss': loss
-    }, path)
-
-
-def load_checkpoint(path='network_checkpoint.tar'):
-    model = Modified3DUNet(in_channels=1, n_classes=3)
-    optimizer = optim.Adam(model.parameters())
-    checkpoint = torch.load(path)
-
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
-    loss = checkpoint['loss']
-    model.train()
-    return model, optimizer, epoch, loss
-
-
-# Load a pt network file on a GPU
-def load_saved_network_gpu(from_gpu,path='network_save.pt'):
-    device = torch.device("cuda")
-    model = Modified3DUNet(in_channels=1, n_classes=3)
-    optimizer = optim.Adam(model.parameters())
-
-    if from_gpu:
-        file = torch.load(path)
-    else:
-        file = torch.load(path, map_location="cuda:0")
-    model.load_state_dict(file['model_state_dict'])
-    optimizer.load_state_dict(file['optimizer_state_dict'])
-    epoch = file['epoch']
-    loss = file['loss']
-
-
-# Load a pt network file on a CPU
-def load_saved_network_cpu(from_gpu=True):
-    return True
-
-
