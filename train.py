@@ -58,12 +58,20 @@ def validation(model, val_loader, criterion):
     return accuracy, loss
 
 
+def adapt_learn_rate(optimizer, epoch):
+    # Use an initial learn rate of 0.0005; slightly decrease lr with 0.0005 * 0.985**epoch
+    lr = 0.0005 * 0.985**epoch
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+
 def train(model, train_loader, val_loader):
-    epochs = 2
+    epochs = 10
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005)
     start_time = time.time()
     validate = True
+
     for epoch in range(epochs):
         total_loss = 0.0
         n_correct, n_total = 0, 0
@@ -87,7 +95,9 @@ def train(model, train_loader, val_loader):
             with torch.no_grad():
                 val_accuracy, val_loss = validation(model, val_loader, criterion)
                 print("Validation accuracy = {:.2f} \t Validation loss = {:.3f}".format(val_accuracy, val_loss))
-    total_val_loss = 0
+
+        adapt_learn_rate(optimizer, epoch)
+
 
     print("Done")
     print("--- Time: {:.3f} seconds ---".format(time.time() - start_time))

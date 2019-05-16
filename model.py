@@ -187,27 +187,27 @@ class Modified3DUNet(nn.Module):
         out = self.lrelu(out)
 
         # Level 1 localization pathway
-        out = torch.cat([out, context_4], dim=1)
+        out = torch.cat((out, context_4), dim=1)
         out = self.conv_norm_lrelu_l1(out)
         out = self.conv3d_l1(out)
         out = self.norm_lrelu_upscale_conv_norm_lrelu_l1(out)
 
         # Level 2 localization pathway
-        out = torch.cat([out, context_3], dim=1)
+        out = torch.cat((out, context_3), dim=1)
         out = self.conv_norm_lrelu_l2(out)
         ds2 = out
         out = self.conv3d_l2(out)
         out = self.norm_lrelu_upscale_conv_norm_lrelu_l2(out)
 
         # Level 3 localization pathway
-        out = torch.cat([out, context_2], dim=1)
+        out = torch.cat((out, context_2), dim=1)
         out = self.conv_norm_lrelu_l3(out)
         ds3 = out
         out = self.conv3d_l3(out)
         out = self.norm_lrelu_upscale_conv_norm_lrelu_l3(out)
 
         # Level 4 localization pathway
-        out = torch.cat([out, context_1], dim=1)
+        out = torch.cat((out, context_1), dim=1)
         out = self.conv_norm_lrelu_l4(out)
         out_pred = self.conv3d_l4(out)
 
@@ -269,12 +269,12 @@ class SimpleModel(nn.Module):
         x = self.conv3d_b3_2(x)
         x = self.upsample_1(x)
 
-        x = torch.cat([x, residual_2], dim=1)
+        x = torch.cat((x, residual_2), dim=1)
         x = self.conv3d_b4_1(x)
         x = self.conv3d_b4_2(x)
         x = self.upsample_2(x)
 
-        x = torch.cat([x, residual_1], dim=1)
+        x = torch.cat((x, residual_1), dim=1)
         x = self.conv3d_b5_1(x)
         x = self.conv3d_b5_2(x)
 
