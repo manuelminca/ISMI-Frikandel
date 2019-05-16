@@ -43,19 +43,24 @@ class PatchDataset(Dataset):
 # https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 # Return accuracy
 def validation(model, val_loader, criterion):
-    correct, loss = 0, 0
-    total = 1
+    val_loss, accuracies = [], []
+    total_voxs = 1
     for i, data in enumerate(val_loader):
-        images, labels = data
-        if total == 1:
-            for s in labels.shape:
-                total *= s
-        ans = model(images)
+        print(i)
+        patch_imgs, patch_lbls = data
+        if total_voxs == 1:
+            for s in patch_lbls.shape:
+                total_voxs *= s   # Returns the number of voxels in a batch of patch labels/images
+        ans = model(patch_imgs)
         _, predicted = torch.max(ans.data, 1)
-        correct += (predicted == labels).sum().item()
-        loss += criterion(ans, labels)
-    accuracy = 100. * correct / total
-    return accuracy, loss
+        correct = (predicted == patch_lbls).sum().item()  # Number of correct voxel predictions
+        loss = criterion(ans, patch_lbls)
+        accuracy = 100. * correct / total_voxs
+        val_loss.append(loss)
+        accuracies.append(accuracy)
+
+    return sum(accuracies)/len(accuracies), sum(val_loss)/len(val_loss)
+    #Returning avg loss and accuracy over all batches
 
 
 def adapt_learn_rate(optimizer, epoch):
@@ -71,24 +76,31 @@ def train(model, train_loader, val_loader):
     optimizer = optim.Adam(model.parameters(), lr=0.0005)
     start_time = time.time()
     validate = True
-
+    total_loss = []
     for epoch in range(epochs):
-        total_loss = 0.0
-        n_correct, n_total = 0, 0
+        epoch_loss = []
         for i, data in enumerate(train_loader):
-            images, labels = data
+            patch_imgs, patch_lbls = data
+            if i == 0:
+                total_voxs = np.prod(patch_lbls.shape)
 
             model.train()
             optimizer.zero_grad()
             # forward, backward and optimize
-            pred = model(images)
+            ans = model(patch_imgs)
 
-            loss = criterion(pred, labels)
+            loss = criterion(ans, patch_lbls)
             loss.backward()
             optimizer.step()
 
-            total_loss += loss
-            print("Epoch {:d} \t Batch {:d} \t total_loss = {:.3f}".format(epoch, i, total_loss))
+            epoch_loss.append(loss)
+            _, predicted = torch.max(ans.data, 1)
+            correct = (predicted == patch_lbls).sum().item()  # Number of correct voxel predictions
+            accuracy = 100. * correct / total_voxs
+            print("Epoch {:d} \t Batch {:d} \t Loss = {:.3f} \t Accuracy = {:.3f}".format(epoch, i, loss, accuracy))
+
+
+            loss += criterion(ans, patch_lbls)
 
         if validate:
             model.eval()
@@ -97,7 +109,8 @@ def train(model, train_loader, val_loader):
                 print("Validation accuracy = {:.2f} \t Validation loss = {:.3f}".format(val_accuracy, val_loss))
 
         adapt_learn_rate(optimizer, epoch)
-
+        total_loss.append(epoch_loss)
+    total_val_loss = 0
 
     print("Done")
     print("--- Time: {:.3f} seconds ---".format(time.time() - start_time))
@@ -113,7 +126,7 @@ def main():
     X_train, X_validation = train_test_split(all_groups, test_size=0.2)
 
     # Parameters
-    params = {'batch_size': 2,
+    params = {'batch_size': 1,
               'shuffle': False,
               'num_workers': 1}
 
@@ -126,106 +139,8 @@ def main():
     model = Modified3DUNet(in_channels=1, n_classes=3)
     # summary(model, (1, 256, 256, 32))
 
-    # model = SimpleModel(out_classes=3)
-    # summary(model, (1, 64, 64, 16))
     train(model, train_loader, val_loader)
 
 
 if __name__ == '__main__':
     main()
-
-##############################################################################
-## Manuel stuff
-##############################################################################
-
-# Generators
-#
-# # https://www.kaggle.com/pinocookie/pytorch-dataset-and-dataloader
-
-#
-# validation_set = DatasetLoader(patches_file, X_validation)
-# validation_generator = data.DataLoader(validation_set, **params)
-#
-# # print(validation_set[1])
-#
-# train_iter = iter(train_loader)
-
-
-# images, labels = train_iter.__next__()
-#
-# print(images.shape)
-
-# for img, lbl in training_generator:
-# 	print(img.shape)
-
-
-# keys = []
-# with h5py.File("patches_dataset.h5", 'r') as f: # open file
-#     patch_number = 0
-#     all_groups = list(f)
-#
-#     batch = f[all_groups[patch_number]]
-#
-#     for i in range(16):
-#
-#         #print(f[all_groups[str(patch_number+1)]['img']].shape)
-#
-#         #batch = np.append(batch, f[all_groups[patch_number +1]['img']], axis=0)
-#         patch_number += 1
-#         #print(batch.shape)
-#
-
-
-#
-# # Loading the model
-# in_channels = 4
-# n_classes = 3
-# base_n_filter = 16
-# model = Modified3DUNet(in_channels, n_classes, base_n_filter).to(device)
-#
-#
-#
-# x_train = torch.from_numpy(x_train)
-# y_train = torch.from_numpy(y_train)
-#
-# batch_size = 32
-# dataset = torch.utils.data.TensorDataset(x_train, y_train)
-# loader = torch.utils.data.DataLoader(dataset, batch_size, shuffle=False)
-#
-# model = Net()
-# opt = optim.Adam(model.parameters())
-#
-#
-# if use_cuda:
-#         torch.backends.cudnn.benchmark = True
-#         model.cuda()
-#
-#     # measure
-#
-#     for epoch in range(2):
-#         if epoch == 1:
-#             start = time.time()
-#         for i, data in enumerate(loader):
-#             opt.zero_grad()
-#
-#             batch, label = data
-#             batch = Variable(batch)
-#             label = Variable(label)
-#
-#             if use_cuda:
-#                 batch = batch.cuda()
-#                 label = label.cuda()
-#
-#             out = model.forward(batch)
-#
-#             loss = -out.gather(1, label).log().mean()
-#             loss.backward()
-#             opt.step()
-#
-#             if verbose:
-#                 print(f"{i}: {loss.data[0]}", end=" "*16+"\r")
-#         if epoch == 1:
-#             print(f"Elapsed time: {time.time()-start}")
-#
-#
-#
