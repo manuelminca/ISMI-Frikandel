@@ -6,12 +6,15 @@ print(sys.version)
 
 import numpy as np
 import nibabel as nib
-# import SimpleITK as sitk
+import SimpleITK as sitk
+from glob import glob
+from resample_sitk import resample_sitk_image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from glob import glob
 from torch.utils.data import Dataset, DataLoader
 import h5py
+
 
 #memory debugger
 #from pympler.tracker import SummaryTracker
@@ -51,11 +54,11 @@ class Pancreas(Dataset):
 
         assert len(self.imgs) > 0,f'\n\nMake sure your image path is correct. the train path is currently set to {trainpath} but could not find any training images there.'
 
-    def load_dir(self,path):
+    def load_dir(self, path):
         '''
-        We do not load the *actual* data yet, that is done with .get_data() in __getitem__
+        We do not load the *actual* data yet, that is done in resample_sitk_image in __getitem__
         '''
-        return [nib.load(path+file) for file in os.listdir(path) if file[:8] == 'pancreas' and file[-7:] == '.nii.gz']
+        return glob(path + "*.nii.gz")
 
     def __getitem__(self,i):
         def normalize(img): # we don't change the std (should we?)
@@ -63,20 +66,14 @@ class Pancreas(Dataset):
             img = (img - l)/(u-l)
             return img
 
-        #print(self.imgs[i].affine)#I think we have to change the affine to change the voxel spacing https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
-                                  # or pixdim from the header...
-
-
-        sample = self.imgs[i].get_fdata(caching='unchanged') #using get_fdata() instead of get_data() makes it easier to predict the return data type . caching='unchanged' ensures we DONT cache the image, it would blow up our memory
-
-        #sitk doesn't work on nibabel images
-        #sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+        sample = resample_sitk_image(self.imgs[i], spacing=[0.8, 0.8, 2.5], interpolator='linear')
+        sample = sitk.GetArrayFromImage(sample).transpose(1, 2, 0)
         sample = normalize(sample)
 
-        label = self.lbls[i].get_fdata(caching='unchanged') if self.train else None
-        #label = sitk.resample_sitk_image( label, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+        label = resample_sitk_image(self.lbls[i], spacing=[0.8, 0.8, 2.5], interpolator='nearest')
+        label = sitk.GetArrayFromImage(label).transpose(1, 2, 0)
 
-        return sample,label
+        return sample, label
 
     def __len__(self):
         return len(self.imgs)
@@ -143,12 +140,13 @@ class PatchExtractor:
         if (always_pancreas or random.random() < 0.30):
             #select pancreas within bounding box
             pan = np.where(label==1) # return all indices of pancreas voxels
-            index = random.choice(range(len(pan[0]))) # choose a random pancrea voxel index
+            index = random.choice(range(len(pan[0]))) # choose a random pancreas voxel index
 
             center = Coord((pan[0][index],pan[1][index],pan[2][index]))
             correction = self.patch_size//2
             self.origin = center - correction
         else:
+            # print(dims, patch_size)
             # pick a random location
             x = random.randint(0, dims[0] - self.patch_size[0])
             y = random.randint(0, dims[1] - self.patch_size[1])
@@ -296,11 +294,13 @@ class Coord():
 
 #tracker = SummaryTracker()
 #Create the dataset and Load the data (headers)
+
+
+start_time = time.time()
 pancreas = Pancreas(train=True)
 
-
 #Create a batch generator given a BatchCreator and PatchExtractor object
-patch_size = Coord((64, 64, 16))
+patch_size = Coord((128, 128, 32))
 batch_size = 10
 patchExtractor = PatchExtractor(patch_size)
 batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
@@ -333,9 +333,8 @@ print(patch)
 
 # tracker.print_diff()
 # input()
-#
-#
-filename = "patches_dataset_small.h5"
+
+filename = "patches_dataset_nn_dim.h5"
 
 if os.path.isfile(filename):
     os.remove(filename)
@@ -354,8 +353,57 @@ with h5py.File(filename) as file:
             patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
             count += 1
 
-'''
-Some General Notes:
- Added count increment afterwards such that the indeces start at 0
- set datatypes of img and lbl to int32 since pytorch dataloader only supports: double, float, int64, int32, and uint8.
-'''
+print("--- Time: {:.3f} sec ---".format(time.time() - start_time))
+
+
+
+
+
+# Old Nibabel Pancreas class
+# class Pancreas(Dataset):
+#     '''
+#     todo:
+#         cache patches # Do we actually need to chache them, cant we keep them in memory for one batch and throw them away...? (as long as we don't need to reconstruct the image) We don't keep the full images in memory
+#
+#         up/downsample images voxeldistance, the voxel spacing should be [2.5, 0.8, 0.8] # This page should help to do it in nibabel https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
+#
+#     '''
+#     def __init__(self,train):
+#         self.train = train
+#         if self.train:
+#             self.imgs = self.load_dir(trainpath)
+#             self.lbls = self.load_dir(labelpath)
+#         else:
+#             self.imgs = self.load_dir(testpath)
+#
+#         assert len(self.imgs) > 0,f'\n\nMake sure your image path is correct. the train path is currently set to {trainpath} but could not find any training images there.'
+#
+#     def load_dir(self,path):
+#         '''
+#         We do not load the *actual* data yet, that is done with .get_data() in __getitem__
+#         '''
+#         return [nib.load(path+file) for file in os.listdir(path) if file[:8] == 'pancreas' and file[-7:] == '.nii.gz']
+#
+#     def __getitem__(self,i):
+#         def normalize(img): # we don't change the std (should we?)
+#             u,l = np.max(img),np.min(img)
+#             img = (img - l)/(u-l)
+#             return img
+#
+#         #print(self.imgs[i].affine)#I think we have to change the affine to change the voxel spacing https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
+#                                   # or pixdim from the header...
+#
+#
+#         sample = self.imgs[i].get_fdata(caching='unchanged') #using get_fdata() instead of get_data() makes it easier to predict the return data type . caching='unchanged' ensures we DONT cache the image, it would blow up our memory
+#
+#         #sitk doesn't work on nibabel images
+#         #sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+#         sample = normalize(sample)
+#
+#         label = self.lbls[i].get_fdata(caching='unchanged') if self.train else None
+#         #label = sitk.resample_sitk_image( label, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
+#
+#         return sample,label
+#
+#     def __len__(self):
+#         return len(self.imgs)

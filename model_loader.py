@@ -18,16 +18,16 @@ def save_network(model, optimizer, epoch, loss, checkpoint, filename='network_sa
 
 
 def load_checkpoint(filename):
-	path = 'Networks/' + filename + '.tar'
-	model = Modified3DUNet(in_channels=1, n_classes=3)
-	optimizer = optim.Adam(model.parameters())
-	checkpoint = torch.load(path)
-	model.load_state_dict(checkpoint['model_state_dict'])
-	optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-	epoch = checkpoint['epoch']
-	loss = checkpoint['loss']
-	model.train()
-	return model, optimizer, epoch, loss
+    path = 'Networks/' + filename + '.tar'
+    model = Modified3DUNet(in_channels=1, n_classes=3)
+    optimizer = optim.Adam(model.parameters())
+    checkpoint = torch.load(path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    loss = checkpoint['loss']
+    model.train()
+    return model, optimizer, epoch, loss
 
 
 # Load a pt network file on a GPU

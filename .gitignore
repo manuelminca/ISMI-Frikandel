@@ -1,3 +1,5 @@
 Task07_Pancreas/*
 patches_dataset.h5
 __pycache__
+garbage.py
+patches_dataset_nn_dim.h5
