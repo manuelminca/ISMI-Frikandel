@@ -10,6 +10,7 @@ from torchvision.transforms import ToTensor
 from model import Modified3DUNet, SimpleModel
 from model_loader import save_network, load_checkpoint
 from torchsummary import summary
+import matplotlib.pyplot as plt
 
 
 class PatchDataset(Dataset):
@@ -47,7 +48,6 @@ def validation(model, val_loader, criterion):
     val_loss, accuracies = [], []
     total_voxs = 1
     for i, data in enumerate(val_loader):
-        print(i)
         patch_imgs, patch_lbls = data
         if total_voxs == 1:
             for s in patch_lbls.shape:
@@ -72,7 +72,7 @@ def adapt_learn_rate(optimizer, epoch):
 
 
 def train(model, optimizer, train_loader, val_loader, epoch_checkpoint, total_loss):
-    epochs = 4
+    epochs = 3
     criterion = nn.CrossEntropyLoss()
     start_time = time.time()
 
@@ -116,7 +116,7 @@ def train(model, optimizer, train_loader, val_loader, epoch_checkpoint, total_lo
 
 # Creating a main is necessary in windows for multiprocessing, which is used by the dataloader
 def main():
-    patches_file = "patches_dataset_small.h5"
+    patches_file = "patches_dataset_nn_dim.h5"
     hf = h5py.File(patches_file, 'r')
     # We obtain a list with all the IDs of the patches
     all_groups = list(hf)
@@ -135,18 +135,38 @@ def main():
     train_loader = DataLoader(train_dataset, **params)
     val_loader = DataLoader(val_dataset, **params)
 
-    load_file = True
-    if load_file:
-        model, optimizer, epoch, loss = load_checkpoint('network_checkpoint')
-    else:
-        # Try to obtain summary of the 3D U-Net
-        model = Modified3DUNet(in_channels=1, n_classes=3)
-        optimizer = optim.Adam(model.parameters())
-        epoch = 0
-        loss = []
+    # load_file = False
+    # if load_file:
+    #     model, optimizer, epoch, loss = load_checkpoint('network_checkpoint')
+    # else:
+    #     # Try to obtain summary of the 3D U-Net
+    #     model = Modified3DUNet(in_channels=1, n_classes=3)
+    #     optimizer = optim.Adam(model.parameters())
+    #     epoch = 0
+    #     loss = []
     # summary(model, (1, 256, 256, 32))
 
-    train(model, optimizer, train_loader, val_loader, epoch, loss)
+    # train(model, optimizer, train_loader, val_loader, epoch, loss)
+
+
+    # Example
+    model = load_checkpoint('Test_checkpoint_epoch_3', train=False)
+    example = val_dataset.__getitem__(X_validation[0])
+    # print(example[0])
+    print(example[0].shape)
+    example_out = model(torch.from_numpy(example[0].reshape(1, *example[0].shape)))
+    _, example_pred = torch.max(example_out.data, 1)
+    print(example_pred.shape)
+    output = example_pred.numpy().reshape((128, 128, 32))
+
+    f, ax = plt.subplots(1, 3, sharey=True)
+
+    ax[0].imshow(example[0][0, :, :, 23])
+    ax[1].imshow(example[1][:, :, 23])
+    ax[2].imshow(output[:, :, 23])
+    plt.show()
+
+
 
 
 if __name__ == '__main__':

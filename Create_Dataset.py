@@ -5,7 +5,7 @@ import time
 print(sys.version)
 
 import numpy as np
-import nibabel as nib
+# import nibabel as nib
 import SimpleITK as sitk
 from glob import glob
 from resample_sitk import resample_sitk_image
