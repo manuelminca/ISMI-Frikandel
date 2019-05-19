@@ -165,10 +165,12 @@ class UNetTrainer:
         }, path)
 
     def single_image_forward(self, image, image_size):
-        image = image.reshape((1, 1, *image_size))
-        one_hot_pred = self.model(torch.from_numpy(image))
-        _, pred = torch.max(one_hot_pred, 1)
-        pred = pred.numpy().reshape(image_size)
+        self.model.eval()
+        with torch.no_grad():
+            image = image.reshape((1, 1, *image_size))
+            one_hot_pred = self.model(torch.from_numpy(image))
+            _, pred = torch.max(one_hot_pred, 1)
+            pred = pred.numpy().reshape(image_size)
         return pred
 
     @staticmethod
