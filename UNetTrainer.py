@@ -98,6 +98,8 @@ class UNetTrainer:
                 self.optimizer.zero_grad()
                 # forward, backward and optimize
                 output = self.model(patch_imgs)
+                print(output.shape)
+                print(patch_lbls.shape)
                 loss = self.loss_criterion(output, patch_lbls)
                 loss.backward()
                 self.optimizer.step()
