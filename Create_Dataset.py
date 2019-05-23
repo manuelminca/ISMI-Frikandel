@@ -5,15 +5,13 @@ import time
 print(sys.version)
 
 import numpy as np
-# import nibabel as nib
 import SimpleITK as sitk
 from glob import glob
-
 from resample_sitk import resample_sitk_image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from glob import glob
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import h5py
 
 
@@ -64,7 +62,7 @@ class Pancreas(Dataset):
         '''
         return glob(path + "*.nii.gz")
 
-    def __getitem__(self,i):
+    def __getitem__(self, i):
         def clip(img): # we don't change the std (should we?)
             img = np.maximum(img,clip_minbound)
             img = np.minimum(img,clip_maxbound)
@@ -92,8 +90,6 @@ class BatchCreator:
         self.dataset = dataset
         self.n = len(dataset)
         self.patch_size = self.patch_extractor.patch_size
-
-
 
     def create_image_batch(self, batch_size):
         '''
@@ -129,6 +125,25 @@ class PatchExtractor:
         #self.y = 0   #deprecated
         #self.z = 0   #deprecated
 
+    def pad_patch(self, image, label, dims):
+        '''
+        Called when size in z is smaller than patch size in z. The image and label are padded to the patch size in z.
+        '''
+        # Only padding in z-direction. + 1 in case of uneven size dif.
+        dif = self.patch_size[2] - dims[2]
+        pad_size = int(dif/2)
+        if dif%2 != 0:
+            pad_size += 1
+
+        pad_width = ((0, 0), (0, 0), (pad_size, pad_size))
+
+        # Pad with edge values
+        image = np.pad(image, pad_width, mode='edge')
+        label = np.pad(label, pad_width, mode='edge')
+        dims = Coord(image.shape)
+
+        return image, label, dims
+
     def get_patch(self, image, label, always_pancreas = False):
         '''
         Get a patch of patch_size from input image, along with corresponding label map.
@@ -140,6 +155,9 @@ class PatchExtractor:
         '''
 
         dims = Coord(image.shape)
+
+        if dims[2] < self.patch_size[2]:
+            image, label, dims = self.pad_patch(image, label, dims)
 
         if (always_pancreas or random.random() < 0.30):
             #select pancreas within bounding box
@@ -155,6 +173,7 @@ class PatchExtractor:
             #y = random.randint(0, dims[1] - self.patch_size[1])
             #z = random.randint(0, dims[2] - self.patch_size[2])
             #self.origin = Coord((x,y,z))
+
             self.origin = Coord.get_random(dims - self.patch_size)
 
         self.origin.lower_bound(0) #make sure the origin is not outside (negative) of the image
@@ -263,15 +282,14 @@ class Coord():
         self.x = min(bound.x,self.x)
         self.y = min(bound.y,self.y)
         self.z = min(bound.z,self.z)
-		
+
     @staticmethod
     def get_random(coord):
         x = random.randint(0, coord[0])
         y = random.randint(0, coord[1])
         z = random.randint(0, coord[2])
         return Coord((x,y,z))
-	
-	
+
     def __add__(self,other):
         other = Coord(other)
         return Coord((self.x+other.x, self.y+other.y, self.z+other.z))
@@ -311,7 +329,7 @@ class Coord():
 start_time = time.time()
 pancreas = Pancreas(train=True)
 batch_size = 10
-patch_size = Coord((128, 128, 32) )
+patch_size = Coord((128, 128, 64) )
 #Create a batch generator given a BatchCreator and PatchExtractor object
 
 patchExtractor = PatchExtractor(patch_size)
@@ -319,13 +337,13 @@ batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
 batchGenerator = batchCreator.get_image_generator(batch_size)
 
 #Get one batch from the generator
-batch = next(batchGenerator)
-print(f'size {sys.getsizeof(batch)}')
+# batch = next(batchGenerator)
+# print(f'size {sys.getsizeof(batch)}')
 #Get the first patch from the batch
-patch = batch[0]
+# patch = batch[0]
 
 #print the meta data of the patch
-print(patch)
+# print(patch)
 
 #Plot the patch (inlcuding the original image)
 #patch.imshow()
@@ -334,7 +352,7 @@ print(patch)
 #for patch in next(batchGenerator):
 #    patch.imshow()
 
-filename = "patches_dataset_nn_dim.h5"
+filename = "patches_dataset_test.h5"
 
 if os.path.isfile(filename):
     os.remove(filename)
