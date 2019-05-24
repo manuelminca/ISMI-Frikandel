@@ -31,6 +31,9 @@ class PatchDataset(Dataset):
             X = self.transform(X)
             y = self.transform(y)
 
+        #This doesnt work
+        #X = torch.from_numpy(X).to("cuda:0")
+        #y = torch.from_numpy(y).to("cuda:0")
         return X, y
 
 
@@ -190,9 +193,3 @@ class UNetTrainer:
         print("Validation: \tLoss = {:.3f} \t Accuracy = {:.3f}"
               .format(min(self.loss['val']), self.accuracy['val'][self.best_val_epoch]))
         print("------------------------------------------------------\n")
-
-
-
-
-
-
