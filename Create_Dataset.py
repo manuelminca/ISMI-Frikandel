@@ -5,14 +5,13 @@ import time
 print(sys.version)
 
 import numpy as np
-# import nibabel as nib
 import SimpleITK as sitk
 from glob import glob
 from resample_sitk import resample_sitk_image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from glob import glob
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import h5py
 
 
@@ -25,6 +24,9 @@ path = 'Task07_Pancreas/'
 trainpath = path + 'imagesTr/'
 testpath = path + 'imagesTs/'
 labelpath = path + 'labelsTr/'
+
+clip_minbound = -100
+clip_maxbound = 200
 
 '''
 An images shape is always (x,y,z):
@@ -60,15 +62,15 @@ class Pancreas(Dataset):
         '''
         return glob(path + "*.nii.gz")
 
-    def __getitem__(self,i):
-        def normalize(img): # we don't change the std (should we?)
-            u,l = np.max(img),np.min(img)
-            img = (img - l)/(u-l)
+    def __getitem__(self, i):
+        def clip(img): # we don't change the std (should we?)
+            img = np.maximum(img,clip_minbound)
+            img = np.minimum(img,clip_maxbound)
             return img
 
         sample = resample_sitk_image(self.imgs[i], spacing=[0.8, 0.8, 2.5], interpolator='linear')
         sample = sitk.GetArrayFromImage(sample).transpose(1, 2, 0)
-        sample = normalize(sample)
+        sample = clip(sample)
 
         label = resample_sitk_image(self.lbls[i], spacing=[0.8, 0.8, 2.5], interpolator='nearest')
         label = sitk.GetArrayFromImage(label).transpose(1, 2, 0)
@@ -88,8 +90,6 @@ class BatchCreator:
         self.dataset = dataset
         self.n = len(dataset)
         self.patch_size = self.patch_extractor.patch_size
-
-
 
     def create_image_batch(self, batch_size):
         '''
@@ -125,6 +125,25 @@ class PatchExtractor:
         #self.y = 0   #deprecated
         #self.z = 0   #deprecated
 
+    def pad_patch(self, image, label, dims):
+        '''
+        Called when size in z is smaller than patch size in z. The image and label are padded to the patch size in z.
+        '''
+        # Only padding in z-direction. + 1 in case of uneven size dif.
+        dif = self.patch_size[2] - dims[2]
+        pad_size = int(dif/2)
+        if dif%2 != 0:
+            pad_size += 1
+
+        pad_width = ((0, 0), (0, 0), (pad_size, pad_size))
+
+        # Pad with edge values
+        image = np.pad(image, pad_width, mode='edge')
+        label = np.pad(label, pad_width, mode='edge')
+        dims = Coord(image.shape)
+
+        return image, label, dims
+
     def get_patch(self, image, label, always_pancreas = False):
         '''
         Get a patch of patch_size from input image, along with corresponding label map.
@@ -137,21 +156,25 @@ class PatchExtractor:
 
         dims = Coord(image.shape)
 
+        if dims[2] < self.patch_size[2]:
+            image, label, dims = self.pad_patch(image, label, dims)
+
         if (always_pancreas or random.random() < 0.30):
             #select pancreas within bounding box
             pan = np.where(label==1) # return all indices of pancreas voxels
             index = random.choice(range(len(pan[0]))) # choose a random pancreas voxel index
-
+            
             center = Coord((pan[0][index],pan[1][index],pan[2][index]))
-            correction = self.patch_size//2
-            self.origin = center - correction
+            self.origin = center - self.patch_size + Coord.get_random(self.patch_size)
         else:
             # print(dims, patch_size)
             # pick a random location
-            x = random.randint(0, dims[0] - self.patch_size[0])
-            y = random.randint(0, dims[1] - self.patch_size[1])
-            z = random.randint(0, dims[2] - self.patch_size[2])
-            self.origin = Coord((x,y,z))
+            #x = random.randint(0, dims[0] - self.patch_size[0])
+            #y = random.randint(0, dims[1] - self.patch_size[1])
+            #z = random.randint(0, dims[2] - self.patch_size[2])
+            #self.origin = Coord((x,y,z))
+
+            self.origin = Coord.get_random(dims - self.patch_size)
 
         self.origin.lower_bound(0) #make sure the origin is not outside (negative) of the image
         self.origin.upper_bound(dims - self.patch_size)
@@ -260,6 +283,13 @@ class Coord():
         self.y = min(bound.y,self.y)
         self.z = min(bound.z,self.z)
 
+    @staticmethod
+    def get_random(coord):
+        x = random.randint(0, coord[0])
+        y = random.randint(0, coord[1])
+        z = random.randint(0, coord[2])
+        return Coord((x,y,z))
+
     def __add__(self,other):
         other = Coord(other)
         return Coord((self.x+other.x, self.y+other.y, self.z+other.z))
@@ -298,22 +328,22 @@ class Coord():
 
 start_time = time.time()
 pancreas = Pancreas(train=True)
-
-#Create a batch generator given a BatchCreator and PatchExtractor object
-patch_size = Coord((128, 128, 32))
 batch_size = 10
+patch_size = Coord((128, 128, 64) )
+#Create a batch generator given a BatchCreator and PatchExtractor object
+
 patchExtractor = PatchExtractor(patch_size)
 batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
 batchGenerator = batchCreator.get_image_generator(batch_size)
 
 #Get one batch from the generator
-batch = next(batchGenerator)
-print(f'size {sys.getsizeof(batch)}')
+# batch = next(batchGenerator)
+# print(f'size {sys.getsizeof(batch)}')
 #Get the first patch from the batch
-patch = batch[0]
+# patch = batch[0]
 
 #print the meta data of the patch
-print(patch)
+# print(patch)
 
 #Plot the patch (inlcuding the original image)
 #patch.imshow()
@@ -322,19 +352,7 @@ print(patch)
 #for patch in next(batchGenerator):
 #    patch.imshow()
 
-#Benchmark speed
-#a = time.time()
-# for i in range(10):
-#     batch = next(batchGenerator)
-#
-#     tracker.print_diff()
-    #input()
-#print(f'10 batches of batch_size {batch_size} took {time.time()-a} ms')
-
-# tracker.print_diff()
-# input()
-
-filename = "patches_dataset_nn_dim.h5"
+filename = "patches_dataset_test.h5"
 
 if os.path.isfile(filename):
     os.remove(filename)
@@ -355,55 +373,3 @@ with h5py.File(filename) as file:
 
 print("--- Time: {:.3f} sec ---".format(time.time() - start_time))
 
-
-
-
-
-# Old Nibabel Pancreas class
-# class Pancreas(Dataset):
-#     '''
-#     todo:
-#         cache patches # Do we actually need to chache them, cant we keep them in memory for one batch and throw them away...? (as long as we don't need to reconstruct the image) We don't keep the full images in memory
-#
-#         up/downsample images voxeldistance, the voxel spacing should be [2.5, 0.8, 0.8] # This page should help to do it in nibabel https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
-#
-#     '''
-#     def __init__(self,train):
-#         self.train = train
-#         if self.train:
-#             self.imgs = self.load_dir(trainpath)
-#             self.lbls = self.load_dir(labelpath)
-#         else:
-#             self.imgs = self.load_dir(testpath)
-#
-#         assert len(self.imgs) > 0,f'\n\nMake sure your image path is correct. the train path is currently set to {trainpath} but could not find any training images there.'
-#
-#     def load_dir(self,path):
-#         '''
-#         We do not load the *actual* data yet, that is done with .get_data() in __getitem__
-#         '''
-#         return [nib.load(path+file) for file in os.listdir(path) if file[:8] == 'pancreas' and file[-7:] == '.nii.gz']
-#
-#     def __getitem__(self,i):
-#         def normalize(img): # we don't change the std (should we?)
-#             u,l = np.max(img),np.min(img)
-#             img = (img - l)/(u-l)
-#             return img
-#
-#         #print(self.imgs[i].affine)#I think we have to change the affine to change the voxel spacing https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
-#                                   # or pixdim from the header...
-#
-#
-#         sample = self.imgs[i].get_fdata(caching='unchanged') #using get_fdata() instead of get_data() makes it easier to predict the return data type . caching='unchanged' ensures we DONT cache the image, it would blow up our memory
-#
-#         #sitk doesn't work on nibabel images
-#         #sample = sitk.resample_sitk_image( sample, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
-#         sample = normalize(sample)
-#
-#         label = self.lbls[i].get_fdata(caching='unchanged') if self.train else None
-#         #label = sitk.resample_sitk_image( label, spacing=[2.5, 0.8, 0.8],  interpolator=linear)
-#
-#         return sample,label
-#
-#     def __len__(self):
-#         return len(self.imgs)
