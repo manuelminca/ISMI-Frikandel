@@ -4,6 +4,7 @@ import h5pickle as h5py
 import torch.nn as nn
 import time
 import torch
+from loss import compute_per_channel_dice
 
 
 class PatchDataset(Dataset):
@@ -42,7 +43,7 @@ class UNetTrainer:
     Training UNet with saving/loading model
     '''
     def __init__(self, model, optimizer, loaders, max_epochs, device="cpu", loss_criterion=nn.CrossEntropyLoss(),
-                 lr=0.0005, current_epoch=0, best_val_epoch=0, loss=None, accuracy=None):
+                 lr=0.0005, current_epoch=0, best_val_epoch=0, loss=None, accuracy=None, dice=None):
         self.model = model
         self.optimizer = optimizer
         self.loaders = loaders
@@ -52,6 +53,7 @@ class UNetTrainer:
         self.loss_criterion = loss_criterion
         self.current_epoch = current_epoch
         self.best_val_epoch = best_val_epoch
+        # self.diceCalc = DiceLoss()
         if loss is None:
             self.loss = self.initialize_dict()
         else:
@@ -60,6 +62,10 @@ class UNetTrainer:
             self.accuracy = self.initialize_dict()
         else:
             self.accuracy = accuracy
+        if dice is None:
+            self.dice = self.initialize_dict()
+        else:
+            self.dice = dice
 
     # This loading classmethod creates a new object of this class with parameters partly from the loaded checkpoints
     @classmethod
@@ -103,14 +109,19 @@ class UNetTrainer:
                 self.optimizer.zero_grad()
                 # forward, backward and optimize
                 output = self.model(patch_imgs)
-                print(output.shape)
-                print(patch_lbls.shape)
                 loss = self.loss_criterion(output, patch_lbls)
                 loss.backward()
                 self.optimizer.step()
 
                 epoch_loss.append(loss)
+                # _, predicted = torch.max(output.data, 1)
                 accuracy = self.calculate_accuracy(output, patch_lbls, total_voxels)
+                patch_lbls_one_hot = torch.FloatTensor(output.size())
+                patch_lbls_one_hot.zero_()
+                patch_lbls_one_hot.scatter_(1, patch_lbls.view(1, *patch_lbls.size()), 1)
+
+                dice = compute_per_channel_dice(output, patch_lbls_one_hot)
+                print(*dice.data.data)
                 if batch_print:
                     print("Epoch {:d} \t Batch {:d} \t Loss = {:.3f} \t Accuracy = {:.3f}"
                           .format(self.current_epoch, i, loss, accuracy))

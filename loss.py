@@ -22,6 +22,8 @@ def compute_per_channel_dice(input, target, epsilon=1e-5, ignore_index=None, wei
     target = flatten(target)
 
     target = target.float()
+    input = input.float()
+
     # Compute per channel Dice Coefficient
     intersect = (input * target).sum(-1)
     if weight is not None:

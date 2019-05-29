@@ -12,7 +12,7 @@ import torch.nn as nn
 
 # Creating a main is necessary in windows for multiprocessing, which is used by the dataloader
 def main():
-    patches_file = "patches_dataset_clipped.h5"
+    patches_file = "patches_dataset_nn_dim.h5"
     hf = h5py.File(patches_file, 'r')
     # We obtain a list with all the IDs of the patches
     all_groups = list(hf)
