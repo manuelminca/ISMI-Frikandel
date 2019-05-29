@@ -13,6 +13,7 @@ import matplotlib.patches as patches
 from glob import glob
 from torch.utils.data import Dataset
 import h5py
+from tqdm import tqdm
 
 
 #memory debugger
@@ -163,7 +164,7 @@ class PatchExtractor:
             #select pancreas within bounding box
             pan = np.where(label==1) # return all indices of pancreas voxels
             index = random.choice(range(len(pan[0]))) # choose a random pancreas voxel index
-            
+
             center = Coord((pan[0][index],pan[1][index],pan[2][index]))
             self.origin = center - self.patch_size + Coord.get_random(self.patch_size)
         else:
@@ -358,18 +359,25 @@ if os.path.isfile(filename):
     os.remove(filename)
 
 count = 0
+count_group = 0
 
 
 with h5py.File(filename) as file:
-    for i in range(1):
+    group = file.create_group("Train")
+    for i in tqdm(range(50)):
+
+        if count_group == 250:
+            group = file.create_group("Train" + str(count))
+            count_group = 0
+
         for patch in next(batchGenerator):
-            group = file.create_group(str(count))
-            img = group.create_dataset("img", data=np.float32(patch.pimg))
-            lbl = group.create_dataset("lbl", data=np.int64(patch.plbl))
-            idx = group.create_dataset("idx", data=np.int32(patch.idx))
-            origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
-            patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+            group_2 = group.create_group(str(count))
+            img = group_2.create_dataset("img", data=np.float32(patch.pimg))
+            lbl = group_2.create_dataset("lbl", data=np.int64(patch.plbl))
+            idx = group_2.create_dataset("idx", data=np.int32(patch.idx))
+            origin = group_2.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
+            patch_size = group_2.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
             count += 1
+            count_group += 1
 
 print("--- Time: {:.3f} sec ---".format(time.time() - start_time))
-
