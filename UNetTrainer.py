@@ -53,7 +53,7 @@ class UNetTrainer:
         self.loss_criterion = loss_criterion
         self.current_epoch = current_epoch
         self.best_val_epoch = best_val_epoch
-        # self.diceCalc = DiceLoss()
+        self.classes = 3
         if loss is None:
             self.loss = self.initialize_dict()
         else:
@@ -91,14 +91,14 @@ class UNetTrainer:
         }
         return train_val_dict
 
-    def train(self, batch_print=True, verbose_epoch=1):
+    def train(self, batch_print=True, verbose_batch=1):
         start_time = time.time()
 
         for ep in range(self.max_epochs):
             self.model.train()  # pytorch way to make model trainable. Needed after .eval()
             self.adapt_learn_rate()
-            loss, accuracy, total_voxels = None, None, None
-            epoch_loss = []  # Unused right now. Only last loss of epoch is stored
+            total_voxels = None
+            epoch_loss, accuracy, dice = [], [], []
 
             for i, data in enumerate(self.loaders['train']):
                 patch_imgs, patch_lbls = data
@@ -113,40 +113,36 @@ class UNetTrainer:
                 loss.backward()
                 self.optimizer.step()
 
-                epoch_loss.append(loss)
-                # _, predicted = torch.max(output.data, 1)
+                epoch_loss.append(loss.item())
                 accuracy = self.calculate_accuracy(output, patch_lbls, total_voxels)
-                patch_lbls_one_hot = torch.FloatTensor(output.size())
-                patch_lbls_one_hot.zero_()
-                patch_lbls_one_hot.scatter_(1, patch_lbls.view(1, *patch_lbls.size()), 1)
+                dice = self.calculate_dice(output, patch_lbls)
 
-                dice = compute_per_channel_dice(output, patch_lbls_one_hot)
-                print(*dice.data.data)
-                if batch_print:
-                    print("Epoch {:d} \t Batch {:d} \t Loss = {:.3f} \t Accuracy = {:.3f}"
-                          .format(self.current_epoch, i, loss, accuracy))
+                if batch_print and (i % verbose_batch == 0):
+                    print("Epoch {:d}   Batch {:d}   Loss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
+                          .format(self.current_epoch, i, loss, accuracy, *dice))
 
-            # Saving the last loss and calculate_accuracy
+            # Saving the average loss, accuracy and dice
             self.loss['train'].append(loss.item())
             self.accuracy['train'].append(accuracy)
+            self.dice['train'].append(dice)
 
             # Validation
-            val_accuracy, val_loss = self.validation()
+            val_accuracy, val_loss, val_dice = self.validation()
             self.loss['val'].append(val_loss.item())
             self.accuracy['val'].append(val_accuracy)
+            self.dice['val'].append(val_dice)
             if val_loss == min(self.loss['val']):
                 self.save_network("best_model")
                 self.best_val_epoch = self.current_epoch
 
-            if ep % verbose_epoch == 0:
-                self.epoch_print()
+            self.epoch_print()
             self.current_epoch += 1
             self.save_network("last_model")  # Implement saving best validation epoch
 
         print("--- Training Time: {:.3f} seconds ---".format(time.time() - start_time))
 
     def validation(self):
-        val_loss, accuracies = [], []
+        val_loss, accuracies, dice = [], [], []
         self.model.eval()
         with torch.no_grad():
             for i, data in enumerate(self.loaders['val']):
@@ -155,12 +151,11 @@ class UNetTrainer:
                 if i == 0:
                     total_voxels = np.prod(patch_lbls.shape)  # Returns the number of voxels in a batch of patch labels/images
                 output = self.model(patch_imgs)
-                accuracy = self.calculate_accuracy(output, patch_lbls, total_voxels)
-                loss = self.loss_criterion(output, patch_lbls)
-                val_loss.append(loss)
-                accuracies.append(accuracy)
+                accuracies.append(self.calculate_accuracy(output, patch_lbls, total_voxels))
+                dice.append(self.calculate_dice(output, patch_lbls))
+                val_loss.append(self.loss_criterion(output, patch_lbls))
 
-        return sum(accuracies) / len(accuracies), sum(val_loss) / len(val_loss)
+        return self.avg(accuracies), self.avg(val_loss), self.avg(dice)
         # Returning avg loss and calculate_accuracy over all batches
 
     def adapt_learn_rate(self):
@@ -199,14 +194,25 @@ class UNetTrainer:
         correct = (predicted == patch_lbls).sum().item()  # Number of correct voxel predictions
         return 100. * correct / total_voxels
 
+    @staticmethod
+    def calculate_dice(output, patch_lbls):
+        patch_lbls_one_hot = torch.FloatTensor(output.size())
+        patch_lbls_one_hot.zero_()
+        patch_lbls_one_hot.scatter_(1, patch_lbls.view(1, *patch_lbls.size()), 1)
+        return compute_per_channel_dice(output, patch_lbls_one_hot).data.cpu().numpy()
+
+    @staticmethod
+    def avg(list):
+        return sum(list)/len(list)
+
     def epoch_print(self):
         print("\n------------------------------------------------------")
         print("Current Epoch = {:d}".format(self.current_epoch))
-        print("Training:   \tLoss = {:.3f} \t Accuracy = {:.3f}"
-              .format(self.loss['train'][-1], self.accuracy['train'][-1]))
-        print("Validation: \tLoss = {:.3f} \t Accuracy = {:.3f}"
-              .format(self.loss['val'][-1], self.accuracy['val'][-1]))
+        print("Training:   \tLoss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
+              .format(self.loss['train'][-1], self.accuracy['train'][-1], *self.dice['train'][-1]))
+        print("Validation: \tLoss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
+              .format(self.loss['val'][-1], self.accuracy['val'][-1], *self.dice['val'][-1]))
         print("Best Epoch = {:d}".format(self.best_val_epoch))
-        print("Validation: \tLoss = {:.3f} \t Accuracy = {:.3f}"
-              .format(min(self.loss['val']), self.accuracy['val'][self.best_val_epoch]))
+        print("Validation: \tLoss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
+              .format(min(self.loss['val']), self.accuracy['val'][self.best_val_epoch], *self.dice['train'][self.best_val_epoch]))
         print("------------------------------------------------------\n")
