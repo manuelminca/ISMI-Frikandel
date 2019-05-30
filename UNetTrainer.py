@@ -7,7 +7,7 @@ import torch
 from loss import compute_per_channel_dice
 
 
-class PatchDataset(Dataset):
+class PatchDatasetOld(Dataset):
     '''
     Characterizes a patch dataset for PyTorch
     '''
@@ -38,12 +38,42 @@ class PatchDataset(Dataset):
         return X, y
 
 
+class PatchDataset(Dataset):
+    '''
+    Characterizes a patch dataset for PyTorch
+    '''
+
+    def __init__(self, path, n_classes, transform=None):
+        self.file = h5py.File(path, 'r')
+        self.n_classes = n_classes
+        self.transform = transform
+
+    def __len__(self):
+        return len(list(self.file))
+
+    def __getitem__(self, index):
+        image = self.file[str(index)]['img'][()]
+        label = self.file[str(index)]['lbl'][()]
+
+        X = image.reshape((1, *image.shape))
+        y = label
+
+        if self.transform:
+            X = self.transform(X)
+            y = self.transform(y)
+
+        #This doesnt work
+        #X = torch.from_numpy(X).to("cuda:0")
+        #y = torch.from_numpy(y).to("cuda:0")
+        return X, y
+
+
 class UNetTrainer:
     '''
     Training UNet with saving/loading model
     '''
     def __init__(self, model, optimizer, loaders, max_epochs, device="cpu", loss_criterion=nn.CrossEntropyLoss(),
-                 lr=0.0005, current_epoch=0, best_val_epoch=0, loss=None, accuracy=None, dice=None):
+                 lr=0.0005, current_epoch=0, best_val_epoch=0, batch_size=2, loss=None, accuracy=None, dice=None):
         self.model = model
         self.optimizer = optimizer
         self.loaders = loaders
@@ -53,6 +83,7 @@ class UNetTrainer:
         self.loss_criterion = loss_criterion
         self.current_epoch = current_epoch
         self.best_val_epoch = best_val_epoch
+        self.batch_size = batch_size
         self.classes = 3
         if loss is None:
             self.loss = self.initialize_dict()
@@ -77,11 +108,12 @@ class UNetTrainer:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         epoch = checkpoint['epoch']
         loss = checkpoint['loss']
-        accuracy = checkpoint['calculate_accuracy']
+        accuracy = checkpoint['accuracy']
+        dice = checkpoint['dice']
         best_val_epoch = checkpoint['best_val_epoch']
         print("Checkpoint loaded. Current Epoch: {:d}, Best Validation Loss: {:.3f}".format(epoch, min(loss['val'])))
         return cls(model, optimizer, loaders, max_epochs, device=device, loss_criterion=loss_criterion, lr=lr,
-                   current_epoch=epoch, best_val_epoch=best_val_epoch, loss=loss, accuracy=accuracy)
+                   current_epoch=epoch, best_val_epoch=best_val_epoch, loss=loss, accuracy=accuracy, dice=dice)
 
     @staticmethod
     def initialize_dict():
@@ -97,8 +129,8 @@ class UNetTrainer:
         for ep in range(self.max_epochs):
             self.model.train()  # pytorch way to make model trainable. Needed after .eval()
             self.adapt_learn_rate()
-            total_voxels = None
-            epoch_loss, accuracy, dice = [], [], []
+            total_voxels, loss, accuracy, dice = None, None, None, None
+            epoch_loss = []
 
             for i, data in enumerate(self.loaders['train']):
                 patch_imgs, patch_lbls = data
@@ -113,7 +145,7 @@ class UNetTrainer:
                 loss.backward()
                 self.optimizer.step()
 
-                epoch_loss.append(loss.item())
+                # epoch_loss.append(loss.item())
                 accuracy = self.calculate_accuracy(output, patch_lbls, total_voxels)
                 dice = self.calculate_dice(output, patch_lbls)
 
@@ -121,7 +153,7 @@ class UNetTrainer:
                     print("Epoch {:d}   Batch {:d}   Loss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
                           .format(self.current_epoch, i, loss, accuracy, *dice))
 
-            # Saving the average loss, accuracy and dice
+            # Saving the last loss, accuracy and dice
             self.loss['train'].append(loss.item())
             self.accuracy['train'].append(accuracy)
             self.dice['train'].append(dice)
@@ -174,7 +206,8 @@ class UNetTrainer:
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'loss': self.loss,
-            'calculate_accuracy': self.accuracy,
+            'accuracy': self.accuracy,
+            'dice': self.dice,
             'best_val_epoch': self.best_val_epoch
         }, path)
 
@@ -188,18 +221,19 @@ class UNetTrainer:
             pred = pred.cpu().numpy().reshape((image.shape[2], image.shape[3], image.shape[4]))
         return pred
 
+    def calculate_dice(self, output, patch_lbls):
+        # patch_lbls_one_hot = torch.FloatTensor(output.size())
+        patch_lbls_one_hot = torch.cuda.FloatTensor(output.size())
+        patch_lbls_one_hot.zero_()
+        one_hot_shape = (patch_lbls.size()[0], 1, patch_lbls.size()[1], patch_lbls.size()[2], patch_lbls.size()[3])
+        patch_lbls_one_hot.scatter_(1, patch_lbls.view(one_hot_shape), 1)
+        return compute_per_channel_dice(output, patch_lbls_one_hot).data.cpu().numpy()
+
     @staticmethod
     def calculate_accuracy(output, patch_lbls, total_voxels):
         _, predicted = torch.max(output.data, 1)
         correct = (predicted == patch_lbls).sum().item()  # Number of correct voxel predictions
         return 100. * correct / total_voxels
-
-    @staticmethod
-    def calculate_dice(output, patch_lbls):
-        patch_lbls_one_hot = torch.FloatTensor(output.size())
-        patch_lbls_one_hot.zero_()
-        patch_lbls_one_hot.scatter_(1, patch_lbls.view(1, *patch_lbls.size()), 1)
-        return compute_per_channel_dice(output, patch_lbls_one_hot).data.cpu().numpy()
 
     @staticmethod
     def avg(list):

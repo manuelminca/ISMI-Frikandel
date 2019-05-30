@@ -15,16 +15,15 @@ from torch.utils.data import Dataset
 import h5py
 from tqdm import tqdm
 
-
 #memory debugger
 #from pympler.tracker import SummaryTracker
-
-
 
 path = 'Task07_Pancreas/'
 trainpath = path + 'imagesTr/'
 testpath = path + 'imagesTs/'
 labelpath = path + 'labelsTr/'
+valpath = path + 'imagesVal/'
+vallabelpath = path + 'labelsVal/'
 
 clip_minbound = -100
 clip_maxbound = 200
@@ -47,11 +46,13 @@ class Pancreas(Dataset):
         up/downsample images voxeldistance, the voxel spacing should be [2.5, 0.8, 0.8] # This page should help to do it in nibabel https://nipy.org/nibabel/coordinate_systems.html#the-affine-as-a-series-of-transformations
 
     '''
-    def __init__(self,train):
-        self.train = train
-        if self.train:
+    def __init__(self, type='train'):
+        if type == 'train':
             self.imgs = self.load_dir(trainpath)
             self.lbls = self.load_dir(labelpath)
+        elif type == 'val':
+            self.imgs = self.load_dir(valpath)
+            self.lbls = self.load_dir(vallabelpath)
         else:
             self.imgs = self.load_dir(testpath)
 
@@ -102,7 +103,7 @@ class BatchCreator:
         for i in range(0, batch_size):
             random_index = np.random.choice(len(self.dataset))               # pick random image
             img, lbl = self.dataset[random_index]                            # get image and segmentation map
-            patch_img, patch_lbl = self.patch_extractor.get_patch(img,lbl)  # when image size is equal to patch size, this line is useless...
+            patch_img, patch_lbl = self.patch_extractor.get_patch(img,lbl)   # when image size is equal to patch size, this line is useless...
             origin = self.patch_extractor.origin
             patch_size = Coord(self.patch_extractor.patch_size)
             patches[i] = Patch(patch_img,patch_lbl,random_index,origin,patch_size,self.dataset)
@@ -323,12 +324,13 @@ class Coord():
         return f'({self.x}, {self.y}, {self.z})'
 
 
-#tracker = SummaryTracker()
-#Create the dataset and Load the data (headers)
-
-
 start_time = time.time()
-pancreas = Pancreas(train=True)
+
+### TYPE ###
+type = 'train'
+############
+
+pancreas = Pancreas(type)
 batch_size = 10
 patch_size = Coord((128, 128, 64) )
 #Create a batch generator given a BatchCreator and PatchExtractor object
@@ -336,6 +338,65 @@ patch_size = Coord((128, 128, 64) )
 patchExtractor = PatchExtractor(patch_size)
 batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
 batchGenerator = batchCreator.get_image_generator(batch_size)
+
+filename = type + "example.h5"
+
+if os.path.isfile(filename):
+    os.remove(filename)
+
+batches = 1
+
+
+def make_h5():
+    count = 0
+    with h5py.File(filename) as file:
+        for i in tqdm(range(batches)):
+            for patch in next(batchGenerator):
+                group = file.create_group(str(count))
+                img = group.create_dataset("img", data=np.float32(patch.pimg))
+                lbl = group.create_dataset("lbl", data=np.int64(patch.plbl))
+                idx = group.create_dataset("idx", data=np.int32(patch.idx))
+                origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
+                patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+                count += 1
+
+
+def make_h5_groups():
+    count = 0
+    count_group = 0
+
+    with h5py.File(filename) as file:
+        group = file.create_group("Train")
+        for i in tqdm(range(batches)):
+
+            if count_group == 100:
+                group = file.create_group("Train" + str(count))
+                count_group = 0
+
+            for patch in next(batchGenerator):
+                group_2 = group.create_group(str(count))
+                img = group_2.create_dataset("img", data=np.float32(patch.pimg))
+                lbl = group_2.create_dataset("lbl", data=np.int64(patch.plbl))
+                idx = group_2.create_dataset("idx", data=np.int32(patch.idx))
+                origin = group_2.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
+                patch_size = group_2.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+                count += 1
+                count_group += 1
+
+
+make_h5()
+
+print("--- Time: {:.3f} sec ---".format(time.time() - start_time))
+
+
+
+
+
+
+#tracker = SummaryTracker()
+#Create the dataset and Load the data (headers)
+
+
 
 #Get one batch from the generator
 # batch = next(batchGenerator)
@@ -352,32 +413,3 @@ batchGenerator = batchCreator.get_image_generator(batch_size)
 #Example of looping through a batch
 #for patch in next(batchGenerator):
 #    patch.imshow()
-
-filename = "patches_dataset_test.h5"
-
-if os.path.isfile(filename):
-    os.remove(filename)
-
-count = 0
-count_group = 0
-
-
-with h5py.File(filename) as file:
-    group = file.create_group("Train")
-    for i in tqdm(range(50)):
-
-        if count_group == 250:
-            group = file.create_group("Train" + str(count))
-            count_group = 0
-
-        for patch in next(batchGenerator):
-            group_2 = group.create_group(str(count))
-            img = group_2.create_dataset("img", data=np.float32(patch.pimg))
-            lbl = group_2.create_dataset("lbl", data=np.int64(patch.plbl))
-            idx = group_2.create_dataset("idx", data=np.int32(patch.idx))
-            origin = group_2.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
-            patch_size = group_2.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
-            count += 1
-            count_group += 1
-
-print("--- Time: {:.3f} sec ---".format(time.time() - start_time))
