@@ -335,7 +335,7 @@ if type == "train":
     images = glob(trainpath + "*.nii.gz")
 elif type == 'val':
     images = glob(valpath + "*.nii.gz")
-
+    
 sizes = []
 
 for image in tqdm(images):
