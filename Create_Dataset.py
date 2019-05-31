@@ -335,19 +335,13 @@ if type == "train":
     images = glob(trainpath + "*.nii.gz")
 elif type == 'val':
     images = glob(valpath + "*.nii.gz")
-else:
-    images = glob(testpath + "*.nii.gz")
 
 sizes = []
 
 for image in tqdm(images):
     sitk_image = resample_sitk_image(image, spacing=[0.8, 0.8, 2.5], interpolator='linear')
     sizes.append(np.prod(np.array(sitk_image.GetSize())))
-    # print(sizes[-1])
 
-
-# images = [resample_sitk_image(image, spacing=[0.8, 0.8, 2.5], interpolator='linear') for image in images]
-# sizes = [image.GetSize() for image in images]
 total_size = sum(sizes)
 probs = sizes/total_size
 
