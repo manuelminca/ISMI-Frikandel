@@ -85,10 +85,11 @@ class Pancreas(Dataset):
 
 class BatchCreator:
 
-    def __init__(self, patch_extractor, dataset, target_size):
+    def __init__(self, patch_extractor, dataset, target_size, img_probs):
         self.patch_extractor = patch_extractor
         self.target_size = target_size  # size of the output, can be useful when valid convolutions are used
 
+        self.img_probs = img_probs
         self.dataset = dataset
         self.n = len(dataset)
         self.patch_size = self.patch_extractor.patch_size
@@ -101,7 +102,7 @@ class BatchCreator:
         patches = np.zeros(batch_size,dtype=object)
 
         for i in range(0, batch_size):
-            random_index = np.random.choice(len(self.dataset))               # pick random image
+            random_index = np.random.choice(np.arange(len(self.dataset)), p=self.img_probs)       # pick random image
             img, lbl = self.dataset[random_index]                            # get image and segmentation map
             patch_img, patch_lbl = self.patch_extractor.get_patch(img,lbl)   # when image size is equal to patch size, this line is useless...
             origin = self.patch_extractor.origin
@@ -259,7 +260,7 @@ class Coord():
             x = *height* of the image (direction left arm to right arm)
             y = *width* of the image (direction back to belly)
             z = depth of the image (direction feet to head)
-
+trainpath + "pancreas_001.nii.gz"
         If this is confusing: you can imagine the x from the patients point of view being their width
     '''
     def __init__(self,coord):
@@ -330,13 +331,35 @@ start_time = time.time()
 type = 'train'
 ############
 
+if type == "train":
+    images = glob(trainpath + "*.nii.gz")
+elif type == 'val':
+    images = glob(valpath + "*.nii.gz")
+else:
+    images = glob(testpath + "*.nii.gz")
+
+sizes = []
+
+for image in tqdm(images):
+    sitk_image = resample_sitk_image(image, spacing=[0.8, 0.8, 2.5], interpolator='linear')
+    sizes.append(np.prod(np.array(sitk_image.GetSize())))
+    # print(sizes[-1])
+
+
+# images = [resample_sitk_image(image, spacing=[0.8, 0.8, 2.5], interpolator='linear') for image in images]
+# sizes = [image.GetSize() for image in images]
+total_size = sum(sizes)
+probs = sizes/total_size
+
+print(probs, len(probs))
+
 pancreas = Pancreas(type)
 batch_size = 10
 patch_size = Coord((128, 128, 64) )
 #Create a batch generator given a BatchCreator and PatchExtractor object
 
 patchExtractor = PatchExtractor(patch_size)
-batchCreator = BatchCreator(patchExtractor, pancreas, patch_size)
+batchCreator = BatchCreator(patchExtractor, pancreas, patch_size, probs)
 batchGenerator = batchCreator.get_image_generator(batch_size)
 
 filename = type + "example.h5"
@@ -353,11 +376,8 @@ def make_h5():
         for i in tqdm(range(batches)):
             for patch in next(batchGenerator):
                 group = file.create_group(str(count))
-                img = group.create_dataset("img", data=np.float32(patch.pimg))
-                lbl = group.create_dataset("lbl", data=np.int64(patch.plbl))
-                idx = group.create_dataset("idx", data=np.int32(patch.idx))
-                origin = group.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
-                patch_size = group.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+                img = group.create_dataset("img", data=np.float16(patch.pimg))
+                lbl = group.create_dataset("lbl", data=np.uint8(patch.plbl))
                 count += 1
 
 
@@ -375,16 +395,14 @@ def make_h5_groups():
 
             for patch in next(batchGenerator):
                 group_2 = group.create_group(str(count))
-                img = group_2.create_dataset("img", data=np.float32(patch.pimg))
-                lbl = group_2.create_dataset("lbl", data=np.int64(patch.plbl))
-                idx = group_2.create_dataset("idx", data=np.int32(patch.idx))
-                origin = group_2.create_dataset("origin", data=np.array([patch.origin.x,patch.origin.y,patch.origin.z]))
-                patch_size = group_2.create_dataset("patch_size", data=np.array([patch.patch_size.x,patch.patch_size.y,patch.patch_size.z]))
+                img = group_2.create_dataset("img", data=np.float16(patch.pimg))
+                lbl = group_2.create_dataset("lbl", data=np.uint8(patch.plbl))
                 count += 1
                 count_group += 1
 
 
 make_h5()
+
 
 print("--- Time: {:.3f} sec ---".format(time.time() - start_time))
 
