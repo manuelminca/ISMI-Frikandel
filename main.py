@@ -22,17 +22,21 @@ def main():
     # print(X_train, X_validation)
 
     # for testing
-    train_patches_file = "trainexample.h5"
-    val_patches_file = train_patches_file
-    # train_patches_file = "train_50_patches_dataset.h5"
-    # val_patches_file = "val_50_patches_dataset.h5"
+    datapath = "Data/"
+    train_file = datapath + "patches_dataset_test.h5"
+    val_file = datapath + "val250.h5"
+
+
     # Loader Parameters
     params = {'batch_size': 2,
               'shuffle': False,
-              'num_workers': 1}
+              'num_workers': 0}
 
-    train_dataset = PatchDataset(train_patches_file, n_classes=3)
-    val_dataset = PatchDataset(val_patches_file, n_classes=3)
+    train_dataset = PatchDataset(train_file, n_classes=3)
+    print(len(train_dataset))
+    val_dataset = PatchDataset(val_file, n_classes=3)
+    print(len(val_dataset))
+
     train_loader = DataLoader(train_dataset, **params)
     val_loader = DataLoader(val_dataset, **params)
 
@@ -41,12 +45,13 @@ def main():
         'val': val_loader
     }
 
+
     # Model and param
     model = Modified3DUNet(in_channels=1, n_classes=3)
     optimizer = optim.Adam(model.parameters())
     max_epochs = 10
 
-    # Training model from scratch
+
     # Median foreground percentage = 0.2 (= class 1,2)
     # Median cancer percentage = 0.01 (= class 2)
     # Median pancreas percentage = 0.2 - 0.01 = 0.19 (= class 1)
@@ -56,19 +61,21 @@ def main():
     # loss_criterion = GeneralizedDiceLoss(weight=class_weights)
     # loss_criterion = WeightedCrossEntropyLoss(weight=class_weights)
 
+
     weights = [1, 100, 500]
     class_weights = torch.FloatTensor(weights)
 
     loss_criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-    trainer = UNetTrainer(model, optimizer, loaders, max_epochs, loss_criterion=loss_criterion)
-    trainer.train()
-    # trainer = UNetTrainer(model, optimizer, loaders, max_epochs)
+    # trainer = UNetTrainer(model, optimizer, loaders, max_epochs, loss_criterion=loss_criterion)
     # trainer.train()
 
     # Load from last epoch
-    # checkpoint_trainer = UNetTrainer.load_checkpoint("last_model", model, optimizer, loaders, max_epochs)
-    # checkpoint_trainer.train()
+    checkpoint_trainer = UNetTrainer.load_checkpoint("WCEL_1_10_50_last_model", model, optimizer, loaders, max_epochs, loss_criterion=loss_criterion)
+    pred = checkpoint_trainer.single_image_forward(val_dataset[0][0])
+
+    # print(pred)
+
 
 
 if __name__ == '__main__':

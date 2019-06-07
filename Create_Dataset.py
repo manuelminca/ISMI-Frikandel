@@ -335,17 +335,17 @@ if type == "train":
     images = glob(trainpath + "*.nii.gz")
 elif type == 'val':
     images = glob(valpath + "*.nii.gz")
-    
+
 sizes = []
 
 for image in tqdm(images):
     sitk_image = resample_sitk_image(image, spacing=[0.8, 0.8, 2.5], interpolator='linear')
     sizes.append(np.prod(np.array(sitk_image.GetSize())))
 
-total_size = sum(sizes)
+total_size = np.sum(np.array(sizes).astype(np.int64))
 probs = sizes/total_size
 
-print(probs, len(probs))
+print(len(probs))
 
 pancreas = Pancreas(type)
 batch_size = 10
@@ -356,12 +356,12 @@ patchExtractor = PatchExtractor(patch_size)
 batchCreator = BatchCreator(patchExtractor, pancreas, patch_size, probs)
 batchGenerator = batchCreator.get_image_generator(batch_size)
 
-filename = type + "example.h5"
+filename = type + "a.h5"
 
 if os.path.isfile(filename):
     os.remove(filename)
 
-batches = 1
+batches = 800
 
 
 def make_h5():
@@ -400,28 +400,3 @@ make_h5()
 
 print("--- Time: {:.3f} sec ---".format(time.time() - start_time))
 
-
-
-
-
-
-#tracker = SummaryTracker()
-#Create the dataset and Load the data (headers)
-
-
-
-#Get one batch from the generator
-# batch = next(batchGenerator)
-# print(f'size {sys.getsizeof(batch)}')
-#Get the first patch from the batch
-# patch = batch[0]
-
-#print the meta data of the patch
-# print(patch)
-
-#Plot the patch (inlcuding the original image)
-#patch.imshow()
-
-#Example of looping through a batch
-#for patch in next(batchGenerator):
-#    patch.imshow()

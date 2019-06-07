@@ -1,41 +1,11 @@
 import numpy as np
 from torch.utils.data import Dataset
-import h5pickle as h5py
+# import h5pickle as h5py
 import torch.nn as nn
+import h5py
 import time
 import torch
 from loss import compute_per_channel_dice
-
-
-class PatchDatasetOld(Dataset):
-    '''
-    Characterizes a patch dataset for PyTorch
-    '''
-
-    def __init__(self, path, indexes, n_classes, transform=None):
-        self.file = h5py.File(path, 'r')
-        self.indexes = indexes
-        self.n_classes = n_classes
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.indexes)
-
-    def __getitem__(self, index):
-        image = self.file[str(index)]['img'][()]
-        label = self.file[str(index)]['lbl'][()]
-
-        X = image.reshape((1, *image.shape))
-        y = label
-
-        if self.transform:
-            X = self.transform(X)
-            y = self.transform(y)
-
-        #This doesnt work
-        #X = torch.from_numpy(X).to("cuda:0")
-        #y = torch.from_numpy(y).to("cuda:0")
-        return X, y
 
 
 class PatchDataset(Dataset):
@@ -55,16 +25,14 @@ class PatchDataset(Dataset):
         image = self.file[str(index)]['img'][()]
         label = self.file[str(index)]['lbl'][()]
 
-        X = image.reshape((1, *image.shape))
-        y = label
+        # Getting right shapes and types for pytorch
+        X = image.reshape((1, *image.shape)).astype(np.float32)
+        y = label.astype(np.int64)
 
         if self.transform:
             X = self.transform(X)
             y = self.transform(y)
 
-        #This doesnt work
-        #X = torch.from_numpy(X).to("cuda:0")
-        #y = torch.from_numpy(y).to("cuda:0")
         return X, y
 
 
@@ -73,7 +41,7 @@ class UNetTrainer:
     Training UNet with saving/loading model
     '''
     def __init__(self, model, optimizer, loaders, max_epochs, device="cpu", loss_criterion=nn.CrossEntropyLoss(),
-                 lr=0.0005, current_epoch=0, best_val_epoch=0, batch_size=2, loss=None, accuracy=None, dice=None):
+                 lr=0.0005, current_epoch=0, best_val_epoch=0, batch_size=2, loss=None, accuracy=None, dice=None, name=""):
         self.model = model
         self.optimizer = optimizer
         self.loaders = loaders
@@ -84,7 +52,9 @@ class UNetTrainer:
         self.current_epoch = current_epoch
         self.best_val_epoch = best_val_epoch
         self.batch_size = batch_size
+        self.name = name
         self.classes = 3
+        self.time = 0
         if loss is None:
             self.loss = self.initialize_dict()
         else:
@@ -111,9 +81,10 @@ class UNetTrainer:
         accuracy = checkpoint['accuracy']
         dice = checkpoint['dice']
         best_val_epoch = checkpoint['best_val_epoch']
+        name = checkpoint['name']
         print("Checkpoint loaded. Current Epoch: {:d}, Best Validation Loss: {:.3f}".format(epoch, min(loss['val'])))
         return cls(model, optimizer, loaders, max_epochs, device=device, loss_criterion=loss_criterion, lr=lr,
-                   current_epoch=epoch, best_val_epoch=best_val_epoch, loss=loss, accuracy=accuracy, dice=dice)
+                   current_epoch=epoch, best_val_epoch=best_val_epoch, loss=loss, accuracy=accuracy, dice=dice, name=name)
 
     @staticmethod
     def initialize_dict():
@@ -131,6 +102,7 @@ class UNetTrainer:
             self.adapt_learn_rate()
             total_voxels, loss, accuracy, dice = None, None, None, None
             epoch_loss = []
+            epoch_start = time.time()
 
             for i, data in enumerate(self.loaders['train']):
                 patch_imgs, patch_lbls = data
@@ -164,12 +136,12 @@ class UNetTrainer:
             self.accuracy['val'].append(val_accuracy)
             self.dice['val'].append(val_dice)
             if val_loss == min(self.loss['val']):
-                self.save_network("best_model")
+                self.save_network(self.name + "best_model")
                 self.best_val_epoch = self.current_epoch
 
-            self.epoch_print()
+            self.epoch_print(time.time() - epoch_start)
             self.current_epoch += 1
-            self.save_network("last_model")  # Implement saving best validation epoch
+            self.save_network(self.name + "last_model")  # Implement saving best validation epoch
 
         print("--- Training Time: {:.3f} seconds ---".format(time.time() - start_time))
 
@@ -208,7 +180,8 @@ class UNetTrainer:
             'loss': self.loss,
             'accuracy': self.accuracy,
             'dice': self.dice,
-            'best_val_epoch': self.best_val_epoch
+            'best_val_epoch': self.best_val_epoch,
+            'name': self.name
         }, path)
 
     def single_image_forward(self, image):
@@ -239,7 +212,7 @@ class UNetTrainer:
     def avg(list):
         return sum(list)/len(list)
 
-    def epoch_print(self):
+    def epoch_print(self, epoch_time):
         print("\n------------------------------------------------------")
         print("Current Epoch = {:d}".format(self.current_epoch))
         print("Training:   \tLoss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
@@ -248,5 +221,6 @@ class UNetTrainer:
               .format(self.loss['val'][-1], self.accuracy['val'][-1], *self.dice['val'][-1]))
         print("Best Epoch = {:d}".format(self.best_val_epoch))
         print("Validation: \tLoss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
-              .format(min(self.loss['val']), self.accuracy['val'][self.best_val_epoch], *self.dice['train'][self.best_val_epoch]))
+              .format(min(self.loss['val']), self.accuracy['val'][self.best_val_epoch], *self.dice['val'][self.best_val_epoch]))
+        print("--- Epoch Time: {:.3f} Seconds ---".format(epoch_time))
         print("------------------------------------------------------\n")
