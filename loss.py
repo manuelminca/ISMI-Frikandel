@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torch import nn as nn
 from torch.autograd import Variable
 from torch.nn import MSELoss, SmoothL1Loss, L1Loss
+import numpy as np
 
 
 def compute_per_channel_dice(input, target, epsilon=1e-5, ignore_index=None, weight=None):
@@ -165,8 +166,21 @@ def flatten(tensor):
     return transposed.reshape(C, -1)
 
 
-import torch.nn.functional as F
-from torch.autograd import Variable
+class CrossEntropyTopK(nn.Module):
+    def __init__(self, weight=None, top_k=0.5):
+        super(CrossEntropyTopK, self).__init__()
+        if weight is None:
+            self.loss = nn.CrossEntropyLoss(reduction='none')
+        else:
+            self.loss = torch.nn.CrossEntropyLoss(weight=weight, reduction='none')
+        self.top_k = top_k
+
+    def forward(self, input, target):
+        sizes = list(target.size())
+        num = np.prod(sizes[1:])
+        loss = self.loss(input, target).view(sizes[0], -1)
+        u, v = torch.topk(loss, int(self.top_k * num))
+        return torch.mean(u)
 
 
 class FocalLoss(nn.Module):
