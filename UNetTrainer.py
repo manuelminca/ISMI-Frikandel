@@ -41,7 +41,8 @@ class UNetTrainer:
     Training UNet with saving/loading model
     '''
     def __init__(self, model, optimizer, loaders, max_epochs, device="cpu", loss_criterion=nn.CrossEntropyLoss(),
-                 lr=0.0005, current_epoch=0, best_val_epoch=0, batch_size=2, loss=None, accuracy=None, dice=None, name=""):
+                 lr=0.0005, current_epoch=0, best_val_epoch=0, batch_size=2, loss=None,
+                 accuracy=None, dice=None, name=""):
         self.model = model
         self.optimizer = optimizer
         self.loaders = loaders
@@ -101,7 +102,7 @@ class UNetTrainer:
             self.model.train()  # pytorch way to make model trainable. Needed after .eval()
             self.adapt_learn_rate()
             total_voxels, loss, accuracy, dice = None, None, None, None
-            epoch_loss = []
+            dices, epoch_loss = [], []
             epoch_start = time.time()
 
             for i, data in enumerate(self.loaders['train']):
@@ -120,15 +121,17 @@ class UNetTrainer:
                 # epoch_loss.append(loss.item())
                 accuracy = self.calculate_accuracy(output, patch_lbls, total_voxels)
                 dice = self.calculate_dice(output, patch_lbls)
+                dices.append(dice)
+                epoch_loss.append(loss.item())
 
                 if batch_print and (i % verbose_batch == 0):
                     print("Epoch {:d}   Batch {:d}   Loss = {:.3f}   Accuracy = {:.2f}   Dice = {:.2f} {:.2f} {:.2f}"
                           .format(self.current_epoch, i, loss, accuracy, *dice))
 
             # Saving the last loss, accuracy and dice
-            self.loss['train'].append(loss.item())
+            self.loss['train'].append(self.avg(epoch_loss))
             self.accuracy['train'].append(accuracy)
-            self.dice['train'].append(dice)
+            self.dice['train'].append(self.avg(dices))
 
             # Validation
             val_accuracy, val_loss, val_dice = self.validation()
